@@ -1,0 +1,1108 @@
+// ==UserScript==
+// @name         Drupal - Création automatique des parcours EAFC
+// @namespace    https://ac-poitiers.fr/eafc
+// @version      1.0.3
+// @description  Crée automatiquement des contenus Formation Drupal à partir d'un export JSON de parcours, avec mode sécurité avant chaque clic.
+// @author       EAFC Poitiers
+// @match        https://pp-intranet-rana.in.ac-poitiers.fr/*
+// @match        https://intranet.ac-poitiers.fr/*
+// @match        *://*/admin/*
+// @match        *://*/node/add/formation*
+// @match        *://*/node/*
+// @grant        GM_addStyle
+// @grant        unsafeWindow
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  // Clé localStorage : garde l'export, l'index courant et les options pour reprendre après un changement de page.
+  const STORAGE_KEY = 'eafcDrupalFormationAutomation:v1';
+  // Valeurs par défaut demandées pour la médiathèque.
+  const DEFAULT_DIRECTORY_VALUE = '6632';
+  const DEFAULT_DIRECTORY_LABEL = 'Bannières';
+  const MIN_AUTOCOMPLETE_DELAY_MS = 800;
+  const MIN_AUTOCOMPLETE_SELECTION_DELAY_MS = 600;
+  // Ces deux thématiques sont ajoutées à chaque parcours, en plus du mapping ci-dessous ; Formation est saisie par son ID Drupal.
+  const REQUIRED_THEMATICS = ['EAFC poitiers', '6331'];
+  // Correspondance entre les codes de département de l'export et les libellés visibles dans Fancytree.
+  const DEPARTMENT_LABELS = {
+    '16': '016 - CHARENTE',
+    '17': '017 - CHARENTE-MARITIME',
+    '79': '079 - DEUX-SEVRES',
+    '86': '086 - VIENNE',
+  };
+  // Correspondance Tag/nom de thématique détecté -> ID(s) Drupal à saisir dans le champ Thématique.
+  const THEMATIC_MAP = [
+    [['Pédagogique', 'Pratique pédagogique transversales', 'Pratiques pédagogiques transversales'], ['6624']],
+    [['Numérique', 'Compétences, culture et usages du numérique'], ['6362']],
+    [['QVCT, SST', 'QVCT', 'SST', 'Qualité de vie au travail – Santé et sécurité au travail'], ['6385', '6404']],
+    [['Valeurs de la république, citoyenneté', 'Valeurs de la République et citoyenneté', 'Valeurs de la république', 'citoyenneté'], ['6627', '6236']],
+    [['Orientation', 'Orientation et parcours scolaire'], ['6364']],
+    [['Ecole inclusive', 'École inclusive', 'Ecole inclusive, accessible et ouverte à tous'], ['6314']],
+    [['Europe et international', 'Ouverture européenne et internationale'], ['6328']],
+    [['Formateurs', 'Formation de formateurs et tuteurs'], ['6625']],
+    [['Santé des élèves', 'Santé mentale et bien-être des élèves'], ['6403']],
+    [['Encadrement'], ['6455']],
+    [['Carrière', 'Carrière et évolution professionnelle'], ['6227']],
+    [['2nd degré', 'Second degré'], ['6202']],
+  ];
+
+  // Tous les sélecteurs Drupal utilisés par le script sont centralisés ici pour faciliter les corrections.
+  const SELECTORS = {
+    seedsAdd: '#toolbar-item-seeds-add, [data-toolbar-tray="toolbar-item-seeds-add-tray"]',
+    formationLink: 'a[href="/node/add/formation"], a[data-search-tags="formation"]',
+    title: '[data-drupal-selector="edit-title-0-value"], input[name="title[0][value]"]',
+    chapo: '[data-drupal-selector="edit-field-formation-standfirst-0-value"], textarea[name="field_formation_standfirst[0][value]"]',
+    mediaOpen: '[data-drupal-selector="edit-field-formation-visual-open-button"], input[name="field_formation_visual-media-library-open-button"]',
+    mediaDirectory: '[data-drupal-selector="edit-directory"], select[name="directory"]',
+    mediaApplyFilters: 'input[data-drupal-selector^="edit-submit-media-library"][value="Appliquer les filtres"], input[id^="edit-submit-media-library"][value="Appliquer les filtres"], input.form-submit[value="Appliquer les filtres"]',
+    mediaForm: '[id^="views-form-media-library-widget-image"], form[id*="media-library-widget-image"]',
+    mediaInsert: '.media-library-select.button--primary, button.media-library-select',
+    mediaNextPage: 'a.pager__link--mini[title="Aller à la page suivante"], a.pager__link--action-link[title="Aller à la page suivante"], a[href*="page=1"][href*="directory=6632"]',
+    thematicInput: 'input[name^="field_formation_thematic"][name$="[target_id]"], input[data-drupal-selector^="edit-field-formation-thematic-"][data-autocomplete-path]',
+    thematicAddMore: '[data-drupal-selector="edit-field-formation-thematic-add-more"], input[name="field_formation_thematic_add_more"]',
+    preinscriptionDate: '[data-drupal-selector="edit-field-event-start-date-0-value-date"], input[name="field_event_start_date[0][value][date]"]',
+    addParagraph: '[data-drupal-selector="edit-field-formation-body-add-more-add-modal-form-area-add-more"], input[name="button_add_modal"]',
+    basDePageGroup: '#edit-group-bas-de-page, details[data-drupal-selector="edit-group-bas-de-page"]',
+    formationBottomWrapper: '#edit-group-bas-de-page #edit-field-formation-bottom-wrapper, #edit-field-formation-bottom-wrapper, [data-drupal-selector="edit-field-formation-bottom-wrapper"]',
+    addBottomParagraph: '#edit-group-bas-de-page [data-drupal-selector="edit-field-formation-bottom-add-more-add-modal-form-area-add-more"], [data-drupal-selector="edit-field-formation-bottom-add-more-add-modal-form-area-add-more"]',
+    bottomRichtextButton: '#edit-group-bas-de-page [data-drupal-selector="field-formation-bottom-richtext-add-more"], [data-drupal-selector="field-formation-bottom-richtext-add-more"], button[name="field_formation_bottom_richtext_add_more"]',
+    richtextButton: '[data-paragraph-bundle="richtext"], button[name*="richtext_add_more"], button[value="Texte riche"]',
+    metierTreeWrapper: '#edit-field-metier-tags-wrapper',
+    geographyTreeWrapper: '#edit-field-geographic-scope-tag-wrapper',
+    richtextFormat: 'select[name^="field_formation_body"][name$="[field_richtext_content][0][format]"], select[data-drupal-selector*="field-richtext-content-0-format"]',
+    sourceButtonLabel: '.ck-button__label',
+    sourceTextarea: 'textarea[aria-label="Source code editing area"], textarea.ck-source-editing-area',
+    ckEditable: '.ck-editor__editable[contenteditable="true"]',
+    ckLinkButton: 'button[data-cke-tooltip-text="Lien (Ctrl+K)"], button[aria-label="Lien"], button.ck-link-toolbar-button',
+    ckLinkTextInput: 'form.ck input.ck[inputmode="text"], .ck-link-form input.ck-input[inputmode="text"], input.ck-input[inputmode="text"]',
+    ckLinkUrlInput: 'form.ck input.ck[inputmode="url"], .ck-link-form input.ck-input[inputmode="url"], input.ck-input[inputmode="url"]',
+    unpublishDate: '[data-drupal-selector="edit-unpublish-on-0-value-date"], input[name="unpublish_on[0][value][date]"]',
+    unpublishState: '[data-drupal-selector="edit-unpublish-state-0"], select[name="unpublish_state[0]"]',
+    submit: '[data-drupal-selector="edit-submit"], input[name="op"][value="Enregistrer"]',
+  };
+
+  let state = loadState();
+  let running = false;
+  let paused = false;
+
+  // Initialisation du panneau Tampermonkey et de l'API de debug dès le chargement de la page.
+  addStyles();
+  createPanel();
+  exposeDebugApi();
+  recordCreatedPageIfAvailable();
+
+  // Si le script a soumis une page et que Drupal a changé d'URL, on reprend automatiquement le parcours suivant.
+  if (state.autoResume) {
+    log('Reprise automatique détectée.');
+    setTimeout(() => startAutomation(), 1000);
+  }
+
+  // Lit l'état sauvegardé ; si le JSON est cassé, on repart d'un état propre.
+  function loadState() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return initialState();
+    }
+    try {
+      return { ...initialState(), ...JSON.parse(raw) };
+    } catch (error) {
+      console.warn('[EAFC automation] État illisible, réinitialisation.', error);
+      return initialState();
+    }
+  }
+
+  // État par défaut : aucun export chargé, mode sécurité actif, temporisation AJAX standard.
+  function initialState() {
+    return {
+      exportData: null,
+      index: 0,
+      safeMode: true,
+      autoResume: false,
+      delayMs: 900,
+      lastNodeUrls: [],
+      createdRows: [],
+      pendingCreatedRow: null,
+    };
+  }
+
+  // Sauvegarde chaque changement important pour permettre une reprise après navigation/rechargement.
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    updatePanel();
+  }
+
+  // Crée le panneau flottant : collage JSON, démarrage, pause, reset, mode sécurité et délai AJAX.
+  function createPanel() {
+    const panel = document.createElement('section');
+    panel.id = 'eafc-auto-panel';
+    panel.innerHTML = `
+      <header>
+        <strong>Création parcours EAFC</strong>
+        <button type="button" data-action="toggle">−</button>
+      </header>
+      <div class="eafc-auto-body">
+        <label>Export Drupal JSON</label>
+        <textarea data-role="json" placeholder="Collez ici l'export Drupal create_pages..."></textarea>
+        <div class="eafc-auto-row">
+          <label><input type="checkbox" data-role="safe"> Mode sécurité avant chaque clic</label>
+        </div>
+        <div class="eafc-auto-row">
+          <label>Délai AJAX (ms) <input type="number" min="200" step="100" data-role="delay"></label>
+        </div>
+        <div class="eafc-auto-actions">
+          <button type="button" data-action="load">Charger</button>
+          <button type="button" data-action="start">Démarrer / reprendre</button>
+          <button type="button" data-action="pause">Pause</button>
+          <button type="button" data-action="reset">Réinitialiser</button>
+          <button type="button" data-action="export">Exporter Excel</button>
+        </div>
+        <div class="eafc-auto-status" data-role="status"></div>
+        <pre data-role="log"></pre>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    panel.querySelector('[data-action="toggle"]').addEventListener('click', () => panel.classList.toggle('collapsed'));
+    panel.querySelector('[data-action="load"]').addEventListener('click', loadExportFromPanel);
+    panel.querySelector('[data-action="start"]').addEventListener('click', startAutomation);
+    panel.querySelector('[data-action="pause"]').addEventListener('click', () => {
+      paused = true;
+      running = false;
+      state.autoResume = false;
+      saveState();
+      log('Pause demandée.');
+    });
+    panel.querySelector('[data-action="reset"]').addEventListener('click', () => {
+      state = initialState();
+      running = false;
+      paused = false;
+      saveState();
+      log('État réinitialisé.');
+    });
+    panel.querySelector('[data-action="export"]').addEventListener('click', exportCreatedRowsToExcel);
+    panel.querySelector('[data-role="safe"]').addEventListener('change', event => {
+      state.safeMode = event.target.checked;
+      saveState();
+    });
+    panel.querySelector('[data-role="delay"]').addEventListener('change', event => {
+      state.delayMs = Math.max(200, Number(event.target.value) || 900);
+      saveState();
+    });
+    updatePanel();
+  }
+
+  // Rafraîchit l'affichage du panneau avec la progression et les options courantes.
+  function updatePanel() {
+    const panel = document.querySelector('#eafc-auto-panel');
+    if (!panel) return;
+    const total = state.exportData?.items?.length || 0;
+    panel.querySelector('[data-role="safe"]').checked = Boolean(state.safeMode);
+    panel.querySelector('[data-role="delay"]').value = state.delayMs;
+    panel.querySelector('[data-role="status"]').textContent = total
+      ? `Progression : ${Math.min(state.index + 1, total)} / ${total} — prochain index ${state.index}`
+      : 'Aucun export chargé.';
+  }
+
+  // Styles du panneau et de la surbrillance orange avant les clics automatisés.
+  function addStyles() {
+    GM_addStyle(`
+      #eafc-auto-panel { position: fixed; z-index: 100000; right: 16px; bottom: 16px; width: 390px; max-height: 82vh; overflow: auto; background: #fff; color: #1e1e1e; border: 2px solid #000091; border-radius: 8px; box-shadow: 0 12px 34px rgba(0,0,0,.25); font: 13px/1.35 system-ui, sans-serif; }
+      #eafc-auto-panel header { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; background: #000091; color: #fff; }
+      #eafc-auto-panel header button { color: #000091; background: #fff; border: 0; border-radius: 4px; min-width: 28px; }
+      #eafc-auto-panel.collapsed .eafc-auto-body { display: none; }
+      #eafc-auto-panel .eafc-auto-body { padding: 10px; }
+      #eafc-auto-panel textarea { width: 100%; min-height: 110px; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+      #eafc-auto-panel .eafc-auto-row { margin: 8px 0; }
+      #eafc-auto-panel input[type="number"] { width: 90px; }
+      #eafc-auto-panel .eafc-auto-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; }
+      #eafc-auto-panel .eafc-auto-actions button { border: 1px solid #000091; background: #f6f6ff; padding: 7px; border-radius: 4px; cursor: pointer; }
+      #eafc-auto-panel .eafc-auto-actions button[data-action="export"] { grid-column: 1 / -1; }
+      #eafc-auto-panel .eafc-auto-status { padding: 7px; background: #f7f7f7; border-radius: 4px; }
+      #eafc-auto-panel pre { max-height: 160px; overflow: auto; white-space: pre-wrap; background: #1e1e1e; color: #d8ffd8; padding: 8px; border-radius: 4px; }
+      .eafc-auto-highlight { outline: 4px solid #ff6f4c !important; outline-offset: 3px !important; }
+    `);
+  }
+
+  // Bouton "Charger" : parse l'export create_pages collé dans le panneau.
+  function loadExportFromPanel() {
+    try {
+      const text = document.querySelector('#eafc-auto-panel [data-role="json"]').value.trim();
+      if (!text) {
+        alert('Collez un export JSON avant de charger.');
+        return;
+      }
+      const data = parseExportJson(text);
+      if (data.type !== 'create_pages' || !Array.isArray(data.items)) {
+        throw new Error('Export invalide : type=create_pages et items[] attendus.');
+      }
+      state.exportData = data;
+      state.index = 0;
+      state.autoResume = false;
+      state.createdRows = [];
+      state.pendingCreatedRow = null;
+      saveState();
+      log(`${data.items.length} parcours chargés depuis l'export.`);
+    } catch (error) {
+      console.error('[EAFC automation] Chargement impossible', error);
+      log(`Chargement impossible : ${error.message}`);
+      alert(`Chargement impossible : ${error.message}`);
+    }
+  }
+
+  function parseExportJson(text) {
+    const withoutFence = text
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+    try {
+      return JSON.parse(withoutFence);
+    } catch (error) {
+      const start = withoutFence.indexOf('{');
+      const end = withoutFence.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) throw error;
+      return JSON.parse(withoutFence.slice(start, end + 1));
+    }
+  }
+
+
+  // Exporte l'historique des parcours créés dans un fichier .xls ouvrable avec Excel/LibreOffice.
+  function exportCreatedRowsToExcel() {
+    recordCreatedPageIfAvailable();
+    const rows = [...(state.createdRows || [])];
+    if (state.pendingCreatedRow) rows.push({ ...state.pendingCreatedRow, status: 'En attente de récupération ID/lien' });
+    if (!rows.length) {
+      alert('Aucune création enregistrée à exporter pour le moment.');
+      return;
+    }
+    const headers = [
+      'Statut', 'Node ID Drupal', 'Lien de la page', 'Titre', 'Chapo', 'Fiche formation export OVP', 'Thématiques saisies', 'Métiers',
+      'Départements', 'Début préinscription', 'Dépublication', 'Identifiant parcours export', 'Source OVP', 'Plan', 'Date export',
+    ];
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>td{white-space:pre-wrap;}</style></head><body><table><thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${[
+      row.status || 'Créé', row.nodeId || '', row.pageUrl || '', row.title || '', row.chapo || '', row.ficheFormation || '', row.thematics || '', row.publics || '',
+      row.departmentCodes || '', row.preinscriptionStartDate || '', row.unpublishDate || '', row.drupalParcoursId || '', row.sourceOvpId || '', row.planTitle || '', row.exportedAt || '',
+    ].map(value => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `parcours-drupal-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    log(`${rows.length} ligne(s) exportée(s) vers Excel.`);
+  }
+
+  // Prépare une ligne d'export avec toutes les valeurs saisies avant le clic Enregistrer.
+  function buildCreatedRow(item) {
+    return {
+      status: 'Soumis',
+      nodeId: '',
+      pageUrl: '',
+      title: item.title || '',
+      chapo: item.chapo || item.content || '',
+      ficheFormation: ficheFormationText(item),
+      thematics: resolveThematics(item).join(', '),
+      publics: uniquePublics([...(state.exportData.publics || []), ...(item.publics || [])]).map(value => publicPath(value).join(' > ')).join(' | '),
+      departmentCodes: (item.departmentCodes?.length ? item.departmentCodes : String(item.departmentCode || '').split('/')).filter(Boolean).join(', '),
+      preinscriptionStartDate: item.defaultDates?.preinscriptionStartDate || state.exportData.defaultDates?.preinscriptionStartDate || '',
+      unpublishDate: item.defaultDates?.unpublishDate || state.exportData.defaultDates?.unpublishDate || '',
+      drupalParcoursId: item.drupalParcoursId || '',
+      sourceOvpId: item.sourceOvpId || '',
+      planTitle: state.exportData.planTitle || '',
+      exportedAt: new Date().toISOString(),
+    };
+  }
+
+  // Après l'enregistrement, récupère l'ID node et le lien public depuis la barre Seeds/Drupal, puis complète la ligne Excel.
+  function recordCreatedPageIfAvailable() {
+    if (!state.pendingCreatedRow) return;
+    const nodeInfo = getCurrentNodeInfo();
+    if (!nodeInfo.nodeId && !nodeInfo.pageUrl) return;
+    state.createdRows = [...(state.createdRows || []), {
+      ...state.pendingCreatedRow,
+      status: 'Créé',
+      nodeId: nodeInfo.nodeId,
+      pageUrl: nodeInfo.pageUrl,
+    }];
+    state.pendingCreatedRow = null;
+    saveState();
+    log(`Parcours Drupal enregistré dans l’export Excel : node ${nodeInfo.nodeId || 'inconnu'}.`);
+  }
+
+  // Recherche l'identifiant (ex: node/1349) et le lien "Voir" de la page créée.
+  function getCurrentNodeInfo() {
+    const nodeLinks = [...document.querySelectorAll('a[href], a[data-drupal-link-system-path]')];
+    const paths = nodeLinks.flatMap(link => [link.getAttribute('data-drupal-link-system-path'), link.getAttribute('href')]).filter(Boolean);
+    const nodeId = (paths.map(path => path.match(/(?:^|\/)node\/(\d+)(?:\/|$|[?#])/)?.[1]).find(Boolean)) || '';
+    const viewLink = nodeLinks.find(link => link.getAttribute('data-drupal-link-system-path') === `node/${nodeId}`)
+      || nodeLinks.find(link => normalize(link.textContent) === 'voir' && link.getAttribute('href'));
+    const pageUrl = viewLink?.href || (nodeId && /\/node\/\d+/.test(window.location.pathname) ? window.location.href : '');
+    return { nodeId, pageUrl };
+  }
+
+  // Point d'entrée principal : ouvre le formulaire ou remplit le formulaire Formation courant.
+  async function startAutomation() {
+    if (running) return;
+    if (!state.exportData?.items?.length) {
+      alert('Chargez un export Drupal avant de démarrer.');
+      return;
+    }
+    if (state.index >= state.exportData.items.length) {
+      log('Tous les parcours ont déjà été traités.');
+      state.autoResume = false;
+      saveState();
+      return;
+    }
+    running = true;
+    paused = false;
+    state.autoResume = true;
+    saveState();
+
+    try {
+      if (isFormationForm()) {
+        await fillCurrentFormation();
+      } else {
+        await goToFormationForm();
+      }
+    } catch (error) {
+      console.error('[EAFC automation]', error);
+      log(`Erreur : ${error.message}`);
+      running = false;
+      state.autoResume = false;
+      saveState();
+      alert(`Automation interrompue : ${error.message}`);
+    }
+  }
+
+  // Navigation initiale : clique Seeds Add puis Formation, ou directement Formation si le lien est déjà visible.
+  async function goToFormationForm() {
+    const item = currentItem();
+    log(`Ouverture du formulaire Formation pour : ${item.title}`);
+    const directLink = document.querySelector(SELECTORS.formationLink);
+    if (directLink) {
+      await safeClick(directLink, 'Cliquer sur Formation');
+      return;
+    }
+    const seedsButton = await waitForElement(SELECTORS.seedsAdd, 6000);
+    await safeClick(seedsButton, 'Cliquer sur Seeds Add');
+    const formationLink = await waitForElement(SELECTORS.formationLink, 10000);
+    await safeClick(formationLink, 'Cliquer sur Formation');
+  }
+
+  // Orchestration d'un parcours : tous les champs Drupal sont remplis dans l'ordre demandé, puis Enregistrer.
+  async function fillCurrentFormation() {
+    const item = currentItem();
+    log(`Remplissage du parcours ${state.index + 1}/${state.exportData.items.length} : ${item.title}`);
+
+    // 1) Titre et chapo.
+    setValue(await waitForElement(SELECTORS.title), truncate(item.title || '', 100));
+    setValue(await waitForElement(SELECTORS.chapo), item.chapo || item.content || '');
+
+    // 2) Image, thématiques, publics, géographie, dates et paragraphes.
+    await selectRandomMedia();
+    await fillThematics(item);
+    await fillPublics(item);
+    await fillGeography(item);
+    setValue(await waitForElement(SELECTORS.preinscriptionDate), toHtmlDate(item.defaultDates?.preinscriptionStartDate || state.exportData.defaultDates?.preinscriptionStartDate));
+    await addRichtextParagraph(item);
+    await addReturnTrainingLink();
+    setValue(await waitForElement(SELECTORS.unpublishDate), toHtmlDate(item.defaultDates?.unpublishDate || state.exportData.defaultDates?.unpublishDate));
+    const unpublishState = await waitForElement(SELECTORS.unpublishState);
+    await safeClick(unpublishState, 'Cliquer sur l’état de dépublication');
+    setSelectValue(unpublishState, 'unpublished', 'Dépublié');
+
+    // 3) Enregistrement : l'index est incrémenté juste avant le clic pour reprendre au bon item.
+    const submit = await waitForElement(SELECTORS.submit);
+    await safeClick(submit, 'Enregistrer le parcours', () => {
+      state.pendingCreatedRow = buildCreatedRow(item);
+      state.index += 1;
+      state.autoResume = state.index < state.exportData.items.length;
+      saveState();
+      log(state.autoResume ? 'Parcours soumis. Le script reprendra sur la page suivante.' : 'Dernier parcours soumis.');
+    });
+  }
+
+  // Médiathèque : ouvre "Ajouter un média", sélectionne le dossier Bannières puis une image aléatoire, y compris sur la page suivante si disponible.
+  async function selectRandomMedia() {
+    const openButton = await waitForElement(SELECTORS.mediaOpen);
+    await safeClick(openButton, 'Ouvrir la médiathèque');
+    // Certains boutons Drupal nécessitent un second déclenchement souris/pointeur si la modale ne s'ouvre pas.
+    if (!(await appears(SELECTORS.mediaDirectory, 2500))) {
+      log('La médiathèque ne s’est pas ouverte après le clic standard, nouvel essai avec une séquence complète souris/pointeur.');
+      triggerClick(openButton);
+      await sleep(state.delayMs);
+    }
+    const directory = await waitForElement(SELECTORS.mediaDirectory, 15000);
+    setSelectValue(directory, DEFAULT_DIRECTORY_VALUE, DEFAULT_DIRECTORY_LABEL);
+    const applyFilters = await waitForElement(SELECTORS.mediaApplyFilters, 10000);
+    await safeClick(applyFilters, 'Appliquer les filtres de la médiathèque');
+    await waitForAjax();
+
+    let choices = await getSelectableMediaChoices();
+    const nextPage = findVisibleElement(SELECTORS.mediaNextPage);
+    if (nextPage && Math.random() < 0.5) {
+      await safeClick(nextPage, 'Aller à la page suivante des images Bannières');
+      await waitForAjax();
+      choices = await getSelectableMediaChoices();
+    }
+    if (!choices.length) {
+      throw new Error('Aucune image sélectionnable trouvée dans le répertoire Bannières de la médiathèque.');
+    }
+    const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+    await safeClick(randomChoice, 'Sélectionner une image aléatoire Bannières');
+    const insert = await waitForElement(SELECTORS.mediaInsert, 10000);
+    await safeClick(insert, 'Insérer l’élément sélectionné');
+    await waitForAjax();
+  }
+
+  async function getSelectableMediaChoices() {
+    const mediaForm = await waitForElement(SELECTORS.mediaForm, 15000);
+    return [...mediaForm.querySelectorAll('input[type="checkbox"], input[type="radio"]')]
+      .filter(input => !input.disabled && isVisible(input));
+  }
+
+  // Remplit les thématiques une par une ; clique "Ajouter un autre élément" entre deux valeurs.
+  async function fillThematics(item) {
+    const thematics = resolveThematics(item);
+    log(`Thématiques : ${thematics.join(', ')}`);
+    for (let index = 0; index < thematics.length; index += 1) {
+      const input = await getThematicInput(index);
+      await fillAutocomplete(input, thematics[index]);
+      if (index < thematics.length - 1) {
+        const addButton = await waitForElement(SELECTORS.thematicAddMore);
+        await safeClick(addButton, 'Ajouter un autre élément thématique');
+        await waitForAjax();
+      }
+    }
+  }
+
+  // Convertit item.theme/export.theme en ID(s) Drupal et ajoute toujours EAFC poitiers + Formation (6331).
+  function resolveThematics(item) {
+    const rawTheme = [item.theme, state.exportData.theme].filter(Boolean).join(', ');
+    const normalizedTheme = normalize(rawTheme);
+    const values = [];
+    THEMATIC_MAP.forEach(([aliases, thematicIds]) => {
+      if (aliases.some(alias => normalizedTheme.includes(normalize(alias)))) {
+        thematicIds.forEach(thematicId => {
+          if (!values.includes(thematicId)) values.push(thematicId);
+        });
+      }
+    });
+    REQUIRED_THEMATICS.forEach(thematic => {
+      if (!values.includes(thematic)) values.push(thematic);
+    });
+    return values;
+  }
+
+  // Récupère le champ d'autocomplétion correspondant à la position demandée.
+  async function getThematicInput(index) {
+    await waitForElement(SELECTORS.thematicInput);
+    const inputs = [...document.querySelectorAll(SELECTORS.thematicInput)].filter(isVisible);
+    return inputs[index] || inputs.find(input => !input.value) || inputs[inputs.length - 1];
+  }
+
+  // Métiers : l'export nomme ce champ "publics" ; on utilise path (si présent) pour dérouler l'arbre jusqu'au métier exact.
+  async function fillPublics(item) {
+    const publics = uniquePublics([...(state.exportData.publics || []), ...(item.publics || [])]);
+    if (!publics.length) {
+      await clickFancytreeTitle('Tous les personnels', 'Sélectionner le métier par défaut : Tous les personnels', { optional: true, scopeSelector: SELECTORS.metierTreeWrapper });
+      return;
+    }
+    for (const publicEntry of publics) {
+      const path = publicPath(publicEntry);
+      await clickFancytreePath(SELECTORS.metierTreeWrapper, path, `Sélectionner le métier : ${path.join(' > ')}`, { optional: true });
+    }
+  }
+
+  // Zone géographique : Académie POITIERS par défaut, ou départements listés dans departmentCodes.
+  async function fillGeography(item) {
+    const rawDepartmentCodes = item.departmentCodes?.length ? item.departmentCodes : String(item.departmentCode || '').split('/');
+    const departmentCodes = unique(rawDepartmentCodes);
+    const scopeSelector = SELECTORS.geographyTreeWrapper;
+    await ensureFancytreeExpanded('Région Académique Nouvelle-Aquitaine', { optional: true, scopeSelector });
+    await ensureFancytreeExpanded('Académie POITIERS', { optional: true, scopeSelector });
+    if (!departmentCodes.length) {
+      await clickFancytreeTitle('Académie POITIERS', 'Sélectionner la zone géographique par défaut : Académie POITIERS', { optional: true, scopeSelector });
+      return;
+    }
+    for (const code of departmentCodes) {
+      const normalizedCode = String(code).replace(/^0+/, '');
+      const label = DEPARTMENT_LABELS[normalizedCode] || String(code);
+      await clickFancytreeTitle(label, `Sélectionner le département : ${label}`, { optional: false, contains: true, scopeSelector });
+    }
+  }
+
+  // Paragraphe Texte riche : ajoute le paragraphe, passe en format avancé, active Source et injecte item.html enrichi des unités attendues.
+  async function addRichtextParagraph(item) {
+    await safeClick(await waitForElement(SELECTORS.addParagraph), 'Ajouter Paragraphe');
+    await safeClick(await waitForElement(SELECTORS.richtextButton, 12000), 'Choisir Texte riche');
+    await waitForAjax();
+    const format = await waitForElement(SELECTORS.richtextFormat, 12000);
+    setSelectValue(format, 'formatage_avance', 'Formatage avancé');
+    await waitForAjax();
+    const sourceButton = await waitForSourceButton();
+    await safeClick(sourceButton, 'Activer le mode Source CKEditor');
+    const source = await waitForElement(SELECTORS.sourceTextarea, 12000);
+    setValue(source, formationRichtextHtml(item));
+    source.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitForAjax();
+  }
+
+  // Ajoute avant l'enregistrement un paragraphe dédié au lien de retour.
+  // Important : le paragraphe est créé avec le bouton "Ajouter Paragraphe" de la section "Bas de page".
+  async function addReturnTrainingLink() {
+    await ensureDetailsOpen(await waitForElement(SELECTORS.basDePageGroup, 12000), 'Ouvrir la section Bas de page');
+    const bottomWrapper = await waitForElement(SELECTORS.formationBottomWrapper, 12000);
+    const existingEditors = new Set([...bottomWrapper.querySelectorAll(SELECTORS.ckEditable)]);
+    await safeClick(await waitForElement(SELECTORS.addBottomParagraph, 12000), 'Ajouter le paragraphe du lien retour dans Bas de page');
+    await safeClick(await waitForElement(SELECTORS.bottomRichtextButton, 12000), 'Choisir Texte riche dans Bas de page');
+    await waitForAjax();
+    const refreshedBottomWrapper = await waitForElement(SELECTORS.formationBottomWrapper, 12000);
+    const returnLinkEditor = await waitForNewCkEditable(existingEditors, 12000, refreshedBottomWrapper);
+    await safeClick(returnLinkEditor, 'Placer le curseur dans le nouveau paragraphe Bas de page Ma formation');
+    await insertReturnTrainingLinkInEditor(returnLinkEditor);
+    await waitForAjax();
+  }
+
+  async function insertReturnTrainingLinkInEditor(editor) {
+    const text = 'Retour à la page Ma formation';
+    const url = 'https://intranet.ac-poitiers.fr/mini-home/ma-formation-0';
+    const html = `<p><a href="${url}">${text}</a></p>`;
+    editor.focus();
+    selectEditorContents(editor);
+
+    if (isFirefox() && await insertReturnTrainingLinkWithToolbar(editor, text, url)) {
+      return;
+    }
+
+    if (insertReturnTrainingLinkWithCkEditorModel(editor, text, url)) {
+      await sleep(250);
+      if (editorHasReturnTrainingLink(editor, url)) {
+        return;
+      }
+    }
+
+    dispatchPasteHtml(editor, html, text);
+    await sleep(250);
+    if (editorHasReturnTrainingLink(editor, url)) {
+      return;
+    }
+
+    // Firefox peut empêcher l'événement paste sans insérer le HTML : on tente alors l'insertion contenteditable native.
+    editor.focus();
+    selectEditorContents(editor);
+    if (insertHtmlWithExecCommand(html)) {
+      await sleep(250);
+      if (editorHasReturnTrainingLink(editor, url)) {
+        return;
+      }
+    }
+
+    // Secours final : si CKEditor ne traite ni paste ni execCommand, on écrit uniquement dans CE nouvel éditeur vide.
+    editor.innerHTML = html;
+    dispatchRichtextInput(editor, html);
+    editor.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function insertReturnTrainingLinkWithToolbar(editor, text, url) {
+    try {
+      editor.focus();
+      selectEditorContents(editor);
+      const linkButton = await waitForElement(SELECTORS.ckLinkButton, 5000);
+      await safeClick(linkButton, 'Ouvrir l’outil Lien CKEditor');
+      const textInput = await waitForElement(SELECTORS.ckLinkTextInput, 5000);
+      setValue(textInput, text);
+      const urlInput = await waitForElement(SELECTORS.ckLinkUrlInput, 5000);
+      setValue(urlInput, url);
+      const insertButton = await waitForButtonByText('Insérer', 5000);
+      await safeClick(insertButton, 'Insérer le lien Ma formation');
+      await sleep(250);
+      return editorHasReturnTrainingLink(editor, url);
+    } catch (error) {
+      console.warn('[EAFC automation] Insertion via bouton Lien CKEditor indisponible, utilisation des secours.', error);
+      return false;
+    }
+  }
+
+  function insertReturnTrainingLinkWithCkEditorModel(editor, text, url) {
+    const ckeditor = findCkEditorInstanceForEditable(editor);
+    if (!ckeditor?.model) return false;
+    try {
+      ckeditor.model.change(writer => {
+        const root = ckeditor.model.document.getRoot();
+        writer.remove(writer.createRangeIn(root));
+        const paragraph = writer.createElement('paragraph');
+        writer.append(paragraph, root);
+        writer.append(writer.createText(text, { linkHref: url }), paragraph);
+      });
+      ckeditor.updateSourceElement?.();
+      return true;
+    } catch (error) {
+      console.warn('[EAFC automation] Insertion via modèle CKEditor indisponible, utilisation des secours.', error);
+      return false;
+    }
+  }
+
+  function findCkEditorInstanceForEditable(editable) {
+    const instances = pageWindow().Drupal?.CKEditor5Instances;
+    if (!instances) return null;
+    const values = typeof instances.values === 'function' ? [...instances.values()] : Object.values(instances);
+    return values.find(instance => {
+      try {
+        const viewRoot = instance.editing?.view?.document?.getRoot();
+        const domRoot = viewRoot && instance.editing.view.domConverter.mapViewToDom(viewRoot);
+        return domRoot === editable || domRoot?.contains(editable) || editable.contains(domRoot);
+      } catch (error) {
+        return false;
+      }
+    }) || null;
+  }
+
+  function pageWindow() {
+    return typeof unsafeWindow === 'undefined' ? window : unsafeWindow;
+  }
+
+  function selectEditorContents(editor) {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function dispatchPasteHtml(editor, html, text) {
+    try {
+      const page = pageWindow();
+      const clipboardData = new page.DataTransfer();
+      clipboardData.setData('text/html', html);
+      clipboardData.setData('text/plain', text);
+      const pasteEvent = new page.ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData,
+      });
+      editor.dispatchEvent(pasteEvent);
+    } catch (error) {
+      console.warn('[EAFC automation] Collage CKEditor indisponible, utilisation du secours HTML.', error);
+    }
+  }
+
+  function editorHasReturnTrainingLink(editor, url) {
+    return [...editor.querySelectorAll('a[href]')].some(link => link.getAttribute('href') === url || link.href === url);
+  }
+
+  function insertHtmlWithExecCommand(html) {
+    try {
+      return pageWindow().document.execCommand?.('insertHTML', false, html) || false;
+    } catch (error) {
+      console.warn('[EAFC automation] execCommand insertHTML indisponible, utilisation du secours HTML.', error);
+      return false;
+    }
+  }
+
+  function dispatchRichtextInput(editor, html) {
+    try {
+      editor.dispatchEvent(new (pageWindow().InputEvent)('input', { bubbles: true, inputType: 'insertHTML', data: html }));
+    } catch (error) {
+      editor.dispatchEvent(new (pageWindow().Event)('input', { bubbles: true }));
+    }
+  }
+
+  function isFirefox() {
+    return /firefox/i.test(pageWindow().navigator.userAgent);
+  }
+
+  async function waitForButtonByText(text, timeout = 10000) {
+    await waitUntil(() => findButtonByText(text), timeout);
+    return findButtonByText(text);
+  }
+
+  function findButtonByText(text) {
+    const wanted = normalize(text);
+    return [...document.querySelectorAll('button, input[type="button"], input[type="submit"]')]
+      .filter(isVisible)
+      .find(button => normalize(button.textContent || button.value).includes(wanted));
+  }
+
+
+  async function waitForNewCkEditable(existingEditors, timeout = 10000, scope = document) {
+    await waitUntil(() => findNewCkEditable(existingEditors, scope), timeout);
+    return findNewCkEditable(existingEditors, scope);
+  }
+
+  function findNewCkEditable(existingEditors, scope = document) {
+    const scopedEditors = [...scope.querySelectorAll(SELECTORS.ckEditable)].filter(isVisible);
+    const editors = scopedEditors.length ? scopedEditors : [...document.querySelectorAll(SELECTORS.ckEditable)].filter(isVisible);
+    const newlyCreatedEditors = editors.filter(editor => !existingEditors.has(editor));
+    // Le lien doit être posé dans le DERNIER paragraphe créé : si plusieurs CKEditor apparaissent,
+    // on privilégie donc le dernier éditeur vide ajouté après le clic "Ajouter Paragraphe".
+    return lastEmptyCkEditor(newlyCreatedEditors)
+      || newlyCreatedEditors[newlyCreatedEditors.length - 1]
+      || lastEmptyCkEditor(editors)
+      || editors[editors.length - 1];
+  }
+
+  function lastEmptyCkEditor(editors) {
+    return [...editors].reverse().find(editor => normalize(editor.textContent) === '');
+  }
+
+  // Autocomplétion Drupal : saisit l'ID demandé, attend vraiment les suggestions, puis laisse Drupal valider la valeur.
+  async function fillAutocomplete(input, label) {
+    input.focus();
+    setValue(input, label);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await sleep(Math.max(state.delayMs, MIN_AUTOCOMPLETE_DELAY_MS));
+    await waitUntil(() => visibleAutocompleteSuggestions().length > 0, 5000).catch(() => null);
+    const suggestions = visibleAutocompleteSuggestions();
+    const normalizedLabel = normalize(label);
+    const suggestion = suggestions.find(element => {
+      const text = normalize(element.textContent);
+      return text.includes(normalizedLabel) || text.includes(`(${normalizedLabel})`);
+    }) || suggestions[0];
+    if (suggestion) {
+      await safeClick(suggestion, `Valider l’autocomplétion : ${label}`);
+      await waitUntil(() => normalize(input.value) !== normalizedLabel || !isVisible(input), 3000).catch(() => null);
+    } else {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      input.blur();
+    }
+    await sleep(Math.max(state.delayMs, MIN_AUTOCOMPLETE_SELECTION_DELAY_MS));
+    await waitForAjax();
+  }
+
+  function visibleAutocompleteSuggestions() {
+    return [...document.querySelectorAll('.ui-autocomplete li, .ui-menu-item')].filter(isVisible);
+  }
+
+  // CKEditor : retrouve le bouton Source à partir de son libellé visible.
+  async function waitForSourceButton() {
+    await waitUntil(() => [...document.querySelectorAll(SELECTORS.sourceButtonLabel)].some(label => normalize(label.textContent) === 'source'), 12000);
+    return [...document.querySelectorAll(SELECTORS.sourceButtonLabel)]
+      .find(label => normalize(label.textContent) === 'source')
+      .closest('button');
+  }
+
+  // Fancytree : clique chaque niveau d'un chemin "Parent > Enfant > Métier" et coche le dernier niveau.
+  async function clickFancytreePath(scopeSelector, path, message, options = {}) {
+    const cleanPath = path.filter(Boolean);
+    if (!cleanPath.length) return;
+    for (const title of cleanPath.slice(0, -1)) {
+      await ensureFancytreeExpanded(title, { ...options, scopeSelector });
+    }
+    await clickFancytreeTitle(cleanPath[cleanPath.length - 1], message, { ...options, scopeSelector });
+  }
+
+  // Fancytree : déroule un nœud si nécessaire pour rendre ses enfants cliquables.
+  async function ensureFancytreeExpanded(title, options = {}) {
+    const node = findFancytreeNode(title, options);
+    if (!node) {
+      if (options.optional) return;
+      throw new Error(`Nœud Fancytree introuvable : ${title}`);
+    }
+    const treeItem = node.closest('[role="treeitem"]');
+    if (treeItem?.getAttribute('aria-expanded') !== 'true') {
+      const expander = node.querySelector('.fancytree-expander');
+      if (expander) {
+        await safeClick(expander, `Dérouler ${title}`);
+        await waitForAjax();
+      }
+    }
+  }
+
+  // Fancytree : clique la checkbox associée à un titre visible.
+  async function clickFancytreeTitle(title, message, options = {}) {
+    await waitUntil(() => Boolean(findFancytreeNode(title, options)) || options.optional, 8000);
+    const node = findFancytreeNode(title, options);
+    if (!node) {
+      log(`Champ Fancytree optionnel non trouvé : ${title}`);
+      return;
+    }
+    const checkbox = node.querySelector('.fancytree-checkbox') || node.closest('.fancytree-node')?.querySelector('.fancytree-checkbox');
+    if (!checkbox) {
+      if (options.optional) return;
+      throw new Error(`Checkbox Fancytree introuvable : ${title}`);
+    }
+    await safeClick(checkbox, message);
+    await waitForAjax();
+  }
+
+  // Recherche Fancytree normalisée pour tolérer accents, tirets et différences de casse.
+  function findFancytreeNode(title, options = {}) {
+    const wanted = normalize(title);
+    const scope = options.scopeSelector ? document.querySelector(options.scopeSelector) : document;
+    if (!scope) return null;
+    return [...scope.querySelectorAll('.fancytree-node')].find(node => {
+      const text = normalize(node.querySelector('.fancytree-title')?.textContent || '');
+      return options.contains ? text.includes(wanted) : text === wanted;
+    });
+  }
+
+  async function ensureDetailsOpen(element, message) {
+    const details = element?.matches?.('details') ? element : element?.closest?.('details');
+    if (!details || details.open) return;
+    const summary = details.querySelector('summary');
+    if (summary) {
+      await safeClick(summary, message);
+      return;
+    }
+    details.open = true;
+    details.dispatchEvent(new Event('toggle', { bubbles: true }));
+  }
+
+  // Clic sécurisé : scroll + surbrillance + confirmation optionnelle + séquence souris/pointeur.
+  async function safeClick(element, message, beforeClick) {
+    if (!element) throw new Error(`Élément introuvable pour : ${message}`);
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+    element.classList.add('eafc-auto-highlight');
+    await sleep(120);
+    if (state.safeMode && !confirm(`${message} ?`)) {
+      element.classList.remove('eafc-auto-highlight');
+      throw new Error(`Action annulée : ${message}`);
+    }
+    if (beforeClick) beforeClick();
+    triggerClick(element);
+    element.classList.remove('eafc-auto-highlight');
+    await sleep(state.delayMs);
+  }
+
+  // Déclenchement robuste d'un clic Drupal sans propriété view (compatible Tampermonkey sandbox).
+  function triggerClick(element) {
+    element.focus?.({ preventScroll: true });
+    ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach(type => {
+      element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+    });
+    element.click();
+  }
+
+  // Affecte une valeur et déclenche input/change pour que Drupal voie la modification.
+  function setValue(element, value) {
+    if (!element) return;
+    element.focus();
+    element.value = value || '';
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Sélectionne une option par value, sinon par libellé partiel normalisé.
+  function setSelectValue(select, value, fallbackLabel) {
+    if (!select) return;
+    const option = [...select.options].find(candidate => candidate.value === value)
+      || [...select.options].find(candidate => normalize(candidate.textContent).includes(normalize(fallbackLabel || value)));
+    if (!option) throw new Error(`Option introuvable : ${fallbackLabel || value}`);
+    select.value = option.value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Attend qu'un élément visible existe pour éviter de cliquer des doublons cachés Drupal.
+  async function waitForElement(selector, timeout = 10000) {
+    await waitUntil(() => findVisibleElement(selector), timeout);
+    return findVisibleElement(selector);
+  }
+
+  // Test court utilisé pour savoir si une modale/champ vient d'apparaître.
+  async function appears(selector, timeout = 1000) {
+    return waitUntil(() => findVisibleElement(selector), timeout)
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  function findVisibleElement(selector) {
+    return [...document.querySelectorAll(selector)].find(isVisible);
+  }
+
+  // Boucle d'attente générique, interrompue si l'utilisateur met en pause.
+  async function waitUntil(predicate, timeout = 10000) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (paused) throw new Error('Pause demandée');
+      const result = predicate();
+      if (result) return result;
+      await sleep(150);
+    }
+    throw new Error('Délai dépassé en attendant un élément ou une condition.');
+  }
+
+  // Petite attente post-clic + attente de disparition des indicateurs AJAX Drupal.
+  async function waitForAjax() {
+    await sleep(state.delayMs);
+    await waitUntil(() => !document.querySelector('.ajax-progress, .ui-dialog .ajax-progress'), 15000).catch(() => null);
+  }
+
+  function isFormationForm() {
+    return Boolean(document.querySelector(SELECTORS.title) && document.querySelector(SELECTORS.chapo));
+  }
+
+  function currentItem() {
+    return state.exportData.items[state.index];
+  }
+
+  // Convertit les dates exportées au format JJ/MM/AAAA vers le format input[type=date] AAAA-MM-JJ.
+  function toHtmlDate(date) {
+    if (!date) return '';
+    const match = String(date).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    return String(date);
+  }
+
+  // Fallback si item.html manque : crée un minimum de HTML compatible fiche formation.
+  function wrapFormationHtml(item) {
+    return `<div class="fiche-formation" data-drupal-parcours-id="${escapeHtml(item.drupalParcoursId || '')}" data-departement="${escapeHtml(item.departmentCode || '')}"><h3>Contenu de la formation</h3><p>${escapeHtml(item.content || item.chapo || '')}</p></div>`;
+  }
+
+  function formationRichtextHtml(item) {
+    return addFormationUnits(item.html || wrapFormationHtml(item));
+  }
+
+  function addFormationUnits(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const root = doc.body;
+    [...root.querySelectorAll('p, li')].forEach(element => {
+      const unit = unitForLabelText(element.textContent);
+      if (unit) appendUnitToElement(element, unit);
+    });
+    [...root.querySelectorAll('h1, h2, h3, h4')].forEach(heading => {
+      const unit = unitForLabelText(heading.textContent);
+      const target = nextContentElement(heading);
+      if (unit && target) appendUnitToElement(target, unit);
+    });
+    return root.innerHTML;
+  }
+
+  function unitForLabelText(value) {
+    const text = normalize(value);
+    if (/^effectif\b/.test(text)) return 'places';
+    if (/^(duree totale du parcours|duree du presentiel|duree du distanciel|duree|presentiel|distanciel)\b/.test(text)) return 'heures';
+    return '';
+  }
+
+  function nextContentElement(element) {
+    let next = element.nextElementSibling;
+    if (next && /^(H1|H2|H3|H4)$/i.test(next.tagName)) return null;
+    while (next && !normalize(next.textContent)) next = next.nextElementSibling;
+    return next && !/^(H1|H2|H3|H4)$/i.test(next.tagName) ? next : null;
+  }
+
+  function appendUnitToElement(element, unit) {
+    const target = lastEditableTextNode(element) || element;
+    if (target.nodeType === Node.TEXT_NODE) {
+      target.nodeValue = withUnit(target.nodeValue, unit);
+      return;
+    }
+    target.textContent = withUnit(target.textContent, unit);
+  }
+
+  function lastEditableTextNode(element) {
+    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+      acceptNode: node => normalize(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    let current;
+    let last;
+    while ((current = walker.nextNode())) {
+      last = current;
+    }
+    return last;
+  }
+
+  function withUnit(value, unit) {
+    const text = String(value || '').trimEnd();
+    if (!text) return text;
+    if (unit === 'heures') {
+      const normalizedHours = text.replace(/(\d+(?:[,.]\d+)?)\s*h\b/gi, '$1 heures');
+      return /\bheures?\b/i.test(normalizedHours) ? normalizedHours : `${normalizedHours} heures`;
+    }
+    if (unit === 'places') {
+      return /\bplaces?\b/i.test(text) ? text : `${text} places`;
+    }
+    return text;
+  }
+
+  // Extrait en texte lisible les informations de la div .fiche-formation issue de l'export OVP pour la colonne Excel.
+  function ficheFormationText(item) {
+    const html = formationRichtextHtml(item);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const fiche = doc.querySelector('.fiche-formation') || doc.body;
+    return [...fiche.querySelectorAll('h1, h2, h3, h4, p, li')]
+      .map(element => element.textContent.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[character]));
+  }
+
+  function truncate(value, max) {
+    return String(value).slice(0, max);
+  }
+
+  // Normalisation utilisée pour les recherches tolérantes (accents, espaces, tirets, casse).
+  function normalize(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[–—−]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  function unique(values) {
+    return [...new Set(values.map(value => String(value).trim()).filter(Boolean))];
+  }
+
+  // Déduplique les objets publics/métiers sans les convertir en "[object Object]".
+  function uniquePublics(values) {
+    const seen = new Set();
+    return values.filter(value => {
+      if (!value) return false;
+      const key = typeof value === 'string' ? value : value.id || value.path || value.label;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  // Transforme un public exporté en chemin Fancytree, par exemple "Tous les personnels > ... > Tous les enseignants".
+  function publicPath(value) {
+    if (typeof value === 'string') return [value];
+    if (value?.path) return String(value.path).split('>').map(part => part.trim()).filter(Boolean);
+    return [value?.label || value?.id].filter(Boolean);
+  }
+
+  function isVisible(element) {
+    if (!element) return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Journalise dans la console et dans le panneau flottant.
+  function log(message) {
+    const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+    console.log(`[EAFC automation] ${message}`);
+    const output = document.querySelector('#eafc-auto-panel [data-role="log"]');
+    if (output) {
+      output.textContent = `${line}\n${output.textContent}`.slice(0, 6000);
+    }
+  }
+
+  // API console utile pour dépanner : window.eafcDrupalFormationAutomation.start/pause/reset/state().
+  function exposeDebugApi() {
+    window.eafcDrupalFormationAutomation = {
+      start: startAutomation,
+      pause: () => { paused = true; running = false; },
+      reset: () => { state = initialState(); saveState(); },
+      state: () => ({ ...state }),
+      exportExcel: exportCreatedRowsToExcel,
+    };
+  }
+}());
