@@ -1,0 +1,10 @@
+const fs=require('fs'), vm=require('vm');
+const files=['src/studio/core/model.js','src/studio/core/normalize.js','src/studio/core/matching.js','src/studio/core/diff.js','src/studio/core/job.js'];
+const ctx={window:{EAFC:{VERSION:'test'}}, console, Blob:class{constructor(parts,opts){this.parts=parts;this.opts=opts;}}}; ctx.EAFC=ctx.window.EAFC; vm.createContext(ctx); files.forEach(f=>vm.runInContext(fs.readFileSync(f,'utf8'),ctx,{filename:f}));
+const A=ctx.window.EAFC; function assert(c,m){if(!c)throw new Error(m)}
+assert(A.normalize.normalizeTitle('016 - École d’été')===A.normalize.normalizeTitle('Ecole d ete'),'titre départemental normalisé');
+let add=A.diff.taxonomyOperation('thematics','add',['EAFC poitiers','6331'],['6331','6202']); assert(add.futureValue.includes('EAFC poitiers')&&add.exportedValue.length===1&&add.exportedValue[0]==='6202','add taxonomie ne supprime rien');
+let target=A.model.createCanonical({nodeId:'123',titleDrupal:'16 - Test',departments:['16']}); let request={title:'Nouveau titre',content:'',contact:'__DELETE__'}; let diffs=A.diff.buildDiffs(target,request); assert(diffs.some(d=>d.field==='title')&&!diffs.some(d=>d.field==='content')&&diffs.some(d=>d.operation==='delete'),'diff cellules vides et suppression explicite');
+target.operations=diffs.map(d=>({field:d.field,op:d.operation,value:d.futureValue,currentValue:d.currentValue,futureValue:d.futureValue,selected:true})); let state={workflow:'update_content',sources:[],pages:[target],safeMode:true,confirmClicks:true,simulation:false,history:[]}; let job=A.job.buildJob(state); assert(job.operations.length===2,'payload sans objet vide avec deux opérations'); target.removed=true; job=A.job.buildJob(state); assert(!job.targets&& !job.operations,'ligne retirée absente du Job JSON');
+let s=A.matching.scoreCandidate(A.model.createCanonical({titleSource:'79/86 - Parcours ABC',departments:['79','86']}),A.model.createCanonical({titleDrupal:'Parcours ABC',departments:['79']})); assert(s.score>0.5&&s.method.includes('titre'),'matching titre dernier recours');
+console.log('studio-core tests ok');

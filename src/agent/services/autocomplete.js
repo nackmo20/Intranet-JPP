@@ -1,0 +1,6 @@
+(function(A){
+  function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
+  function matchesSuggestion(text,wanted){const t=norm(text), w=norm(wanted); const id=(String(text).match(/\((\d+)\)/)||[])[1]; return t===w||t.includes(w)||id===String(wanted);}
+  async function select(inputSelector,value,{simulation=false}={}){const input=await A.click.waitFor(inputSelector); A.click.highlight(input); if(!simulation){input.value=value; ['input','keydown','keyup'].forEach(t=>input.dispatchEvent(new Event(t,{bubbles:true})));} await A.click.sleep(400); const suggestions=[...document.querySelectorAll('.ui-autocomplete li, [role="option"]')]; const hit=suggestions.find(x=>matchesSuggestion(x.textContent,value)); if(!hit)throw new Error(`Suggestion autocomplete introuvable: ${value}`); if(simulation)return {simulated:true,suggestion:hit.textContent.trim()}; await A.click.robustClick(hit,{label:`autocomplete ${value}`}); if(!matchesSuggestion(input.value||hit.textContent,value))throw new Error(`Autocomplete non validé: ${value}`); return {ok:true,value:hit.textContent.trim()};}
+  A.autocomplete={select,matchesSuggestion};
+})(window.EAFCAgent=window.EAFCAgent||{});
