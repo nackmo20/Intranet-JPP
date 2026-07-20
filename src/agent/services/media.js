@@ -1,0 +1,4 @@
+(function(A){
+  async function selectBanner(policy={},simulation=false){const requested=policy.imageId||policy.mediaId||''; const candidates=[...document.querySelectorAll('[data-media-id], input[name*="media"], .media-library-item')]; if(!candidates.length){if(policy.required)throw new Error('Aucune bannière disponible dans la médiathèque.'); return {warning:'image absente'};} let choice=requested?candidates.find(e=>(e.dataset.mediaId||e.value||e.textContent).includes(requested)):null; if(!choice) choice=policy.random?candidates[Math.floor(Math.random()*candidates.length)]:candidates[0]; A.click.highlight(choice); if(simulation)return {simulated:true,media:choice.dataset.mediaId||choice.textContent.trim()}; await A.click.robustClick(choice,{label:'sélection bannière'}); return {ok:true,media:choice.dataset.mediaId||choice.textContent.trim()};}
+  A.media={selectBanner};
+})(window.EAFCAgent=window.EAFCAgent||{});

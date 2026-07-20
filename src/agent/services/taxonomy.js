@@ -1,0 +1,7 @@
+(function(A){
+  const REQUIRED_CREATE_THEMES=['EAFC poitiers','6331'];
+  function values(op){return A.core.arr(op.value?.values||op.value||op.terms).map(v=>typeof v==='object'?v.label||v.id||v.path:v).filter(Boolean);}
+  async function applyTheme(op,workflow,simulation=false){let vals=values(op); if(workflow==='create') vals=[...new Set([...vals,...REQUIRED_CREATE_THEMES])]; if(op.op==='add'||workflow==='create') return {field:op.field,finalAdded:vals,simulation}; if(op.op==='remove') return {field:op.field,removed:vals,simulation}; if(op.op==='replace') return {field:op.field,replacedBy:vals,warning:'replace destructif validé par Job',simulation}; if(op.op==='clear') return {field:op.field,cleared:true,warning:'clear explicite',simulation}; throw new Error(`Opération taxonomie inconnue: ${op.op}`);}
+  async function applyPublics(op,simulation=false){const vals=A.core.arr(op.value?.values||op.value).map(v=>typeof v==='object'?v:{label:v,path:v}); if(op.op==='add') return {selected:await A.fancytree.applyMany(vals,{op:'add',simulation}),keptExisting:true}; if(op.op==='remove') return {selected:await A.fancytree.applyMany(vals,{op:'remove',simulation})}; if(op.op==='replace') return {replaceExpected:vals,warning:'comparaison ensemble actuel/attendu requise'}; if(op.op==='clear') return {cleared:true,warning:'confirmation renforcée requise'};}
+  A.taxonomy={applyTheme,applyPublics,REQUIRED_CREATE_THEMES,values};
+})(window.EAFCAgent=window.EAFCAgent||{});

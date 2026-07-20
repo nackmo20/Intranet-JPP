@@ -1,0 +1,7 @@
+(function(A){
+  function init(job){return {schemaVersion:'2.0',jobId:job.jobId,agentVersion:A.VERSION,generatedAt:A.core.now(),startedAt:A.core.now(),status:'partial',items:[],log:[],backup:{items:[]}};}
+  function item(target,job){return {canonicalId:target.canonicalId,nodeId:target.nodeId||'',url:target.url||location.href,status:'skipped',workflow:job.workflow,date:A.core.now(),before:{},operations:target.operations||[],after:{},changedFields:[],unchangedFields:[],errorFields:[],taxonomiesFinal:{},backup:null,saved:false,errors:[],warnings:[],context:'',durationMs:0,attempts:0};}
+  function download(report,type='json'){const text=type==='json'?JSON.stringify(report,null,2):toCsv(report); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:type==='json'?'application/json':'text/csv'})); a.download=`rapport-agent-eafc-v2-${report.jobId}.${type==='json'?'json':'csv'}`; a.click(); URL.revokeObjectURL(a.href);}
+  function toCsv(r){const rows=[['jobId','canonicalId','nodeId','url','status','changedFields','errors','warnings']]; (r.items||[]).forEach(i=>rows.push([r.jobId,i.canonicalId,i.nodeId,i.url,i.status,(i.changedFields||[]).join('|'),(i.errors||[]).map(e=>e.message||e).join('|'),(i.warnings||[]).map(e=>e.message||e).join('|')])); return rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');}
+  A.report={init,item,download,toCsv};
+})(window.EAFCAgent=window.EAFCAgent||{});
