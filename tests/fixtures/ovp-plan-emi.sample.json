@@ -1,0 +1,217 @@
+{
+  "plan": {
+    "title": "Plan EMI",
+    "courses": [
+      {
+        "id": "INT-01",
+        "title": "Parcours EMI 1",
+        "effectif": "020",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 1",
+          "contenu": "Contenu 1",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-02",
+        "title": "Parcours EMI 2",
+        "effectif": "021",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 2",
+          "contenu": "Contenu 2",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-03",
+        "title": "Parcours EMI 3",
+        "effectif": "022",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 3",
+          "contenu": "Contenu 3",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-04",
+        "title": "Parcours EMI 4",
+        "effectif": "023",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 4",
+          "contenu": "Contenu 4",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-05",
+        "title": "Parcours EMI 5",
+        "effectif": "024",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 5",
+          "contenu": "Contenu 5",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-06",
+        "title": "Parcours EMI 6",
+        "effectif": "025",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 6",
+          "contenu": "Contenu 6",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-07",
+        "title": "Parcours EMI 7",
+        "effectif": "026",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 7",
+          "contenu": "Contenu 7",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-08",
+        "title": "Parcours EMI 8",
+        "effectif": "027",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 8",
+          "contenu": "Contenu 8",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-09",
+        "title": "Parcours EMI 9",
+        "effectif": "028",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 9",
+          "contenu": "Contenu 9",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      },
+      {
+        "id": "INT-10",
+        "title": "Parcours EMI 10",
+        "effectif": "029",
+        "presentiel": 6,
+        "distanciel": 3,
+        "dureeTotale": 9,
+        "sessionsPresentiel": 2,
+        "sessionsDistanciel": 1,
+        "niveauDeploiement": "Académie",
+        "typeCandidature": "Individuelle",
+        "meta": {
+          "objectif": "Objectif 10",
+          "contenu": "Contenu 10",
+          "accessibilite": "Accessible",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "Dates à venir",
+          "contact": "eafc@example.test"
+        }
+      }
+    ]
+  }
+}

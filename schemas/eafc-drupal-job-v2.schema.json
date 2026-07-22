@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eafc.local/schemas/eafc-drupal-job-v2.schema.json",
+  "title": "EAFC Drupal Job v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "jobId",
+    "generatedAt",
+    "studioVersion",
+    "workflow",
+    "targets",
+    "operations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0"
+    },
+    "jobId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "studioVersion": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "safeMode": {
+          "type": "boolean"
+        },
+        "stopOnConflict": {
+          "type": "boolean"
+        },
+        "confirmClicks": {
+          "type": "boolean"
+        },
+        "simulation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "workflow": {
+      "enum": [
+        "create",
+        "update_content",
+        "update_sofia",
+        "update_taxonomy"
+      ]
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/target"
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "expectedReport": {
+      "type": "object"
+    },
+    "inventoryUpdate": {
+      "type": "object"
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "OVP",
+            "EXCEL_INVENTORY",
+            "BI_RANA",
+            "PLAN_SESSIONS",
+            "SOFIA_FMO",
+            "MANUAL",
+            "DRUPAL_CURRENT",
+            "CREATE_REPORT",
+            "UPDATE_REPORT",
+            "DEFAULT"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "sourceKind"
+      ],
+      "properties": {
+        "sourceKind": {
+          "type": "string"
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "manualValidation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "canonicalId"
+      ],
+      "properties": {
+        "canonicalId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "intentionId": {
+          "type": "string"
+        },
+        "excelOrigin": {
+          "type": "object",
+          "properties": {
+            "sheet": {
+              "type": "string"
+            },
+            "row": {
+              "type": "integer"
+            }
+          }
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "additionalProperties": true
+    },
+    "operation": {
+      "type": "object",
+      "required": [
+        "operationId",
+        "targetId",
+        "field",
+        "op"
+      ],
+      "properties": {
+        "operationId": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "ignore",
+            "add",
+            "remove",
+            "replace",
+            "clear",
+            "delete"
+          ]
+        },
+        "value": {},
+        "expectedBefore": {},
+        "expectedAfter": {},
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "retry": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "ignore"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "value"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

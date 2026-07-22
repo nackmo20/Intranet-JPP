@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eafc.local/schemas/eafc-drupal-report-v2.schema.json",
+  "title": "EAFC Drupal Report v2",
+  "type": "object",
+  "required": ["schemaVersion", "jobId", "agentVersion", "generatedAt", "status", "items"],
+  "properties": {
+    "schemaVersion": { "const": "2.0" },
+    "jobId": { "type": "string" },
+    "agentVersion": { "type": "string" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "finishedAt": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["success", "partial", "failed", "simulated", "stopped"] },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
+    "inventoryRows": { "type": "array", "items": { "type": "object" } },
+    "log": { "type": "array", "items": { "type": "object" } },
+    "backup": { "type": "object" }
+  },
+  "$defs": {
+    "item": { "type": "object", "required": ["canonicalId", "status"], "properties": { "canonicalId": { "type": "string" }, "nodeId": { "type": "string" }, "url": { "type": "string" }, "status": { "enum": ["created", "updated", "unchanged", "skipped", "conflict", "error", "simulated"] }, "operations": { "type": "array", "items": { "type": "object" } }, "before": { "type": "object" }, "after": { "type": "object" }, "errors": { "type": "array", "items": { "type": "object" } }, "warnings": { "type": "array", "items": { "type": "object" } } }, "additionalProperties": true }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "rows": [
+    {
+      "Dispositif : code": "26A0130001",
+      "Module : code": "75001",
+      "Groupe : identifiant": "G16",
+      "Session": "S1",
+      "Début": "2026-09-01",
+      "Fin": "2026-09-02",
+      "Modalité": "Présentiel",
+      "UAI": "0160106D",
+      "Lieu": "Angoulême",
+      "Maximum": "20",
+      "Total inscrit": "12",
+      "Préinscriptions : Publication : lien préinscription": "https://sofia/16"
+    },
+    {
+      "Dispositif : code": "26A0130001",
+      "Module : code": "75001",
+      "Groupe : identifiant": "G17",
+      "Session": "S1",
+      "Début": "2026-09-03",
+      "Fin": "2026-09-04",
+      "Modalité": "Présentiel",
+      "UAI": "0170001A",
+      "Lieu": "La Rochelle",
+      "Maximum": "20",
+      "Total inscrit": "10",
+      "Préinscriptions : Publication : lien préinscription": "https://sofia/17"
+    },
+    {
+      "Dispositif : code": "26A0130001",
+      "Module : code": "75003",
+      "Groupe : identifiant": "G1617",
+      "Session": "S1",
+      "Début": "2026-09-05",
+      "Fin": "2026-09-06",
+      "Modalité": "Présentiel",
+      "UAI": "0160106D",
+      "Lieu": "Angoulême"
+    }
+  ]
+}
