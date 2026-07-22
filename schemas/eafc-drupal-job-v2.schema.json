@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eafc.local/schemas/eafc-drupal-job-v2.schema.json",
+  "title": "EAFC Drupal Job v2",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "jobId",
+    "generatedAt",
+    "studioVersion",
+    "workflow",
+    "targets"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0.0"
+    },
+    "jobId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "studioVersion": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      },
+      "default": []
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "simulation": {
+          "type": "boolean",
+          "default": true
+        },
+        "safeMode": {
+          "type": "boolean",
+          "default": true
+        },
+        "confirmClicks": {
+          "type": "boolean",
+          "default": true
+        },
+        "autoSave": {
+          "type": "boolean",
+          "default": false
+        },
+        "stopOnConflict": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "enum": [
+        "create",
+        "update_content",
+        "update_sofia",
+        "update_taxonomy"
+      ]
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/target"
+      }
+    },
+    "reportExpected": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "json",
+              "xlsx",
+              "html-xls"
+            ]
+          }
+        },
+        "includeInventoryUpdate": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": [
+        "sourceType",
+        "name",
+        "fingerprint"
+      ],
+      "properties": {
+        "sourceType": {
+          "enum": [
+            "json_ovp",
+            "json_ovp_batch",
+            "bi_rana",
+            "plan_sessions_sofia",
+            "recensement_excel",
+            "demande_modification_excel",
+            "legacy_mapping_drupal_sofia",
+            "legacy_create_pages",
+            "legacy_update_payload",
+            "legacy_taxonomy_payload",
+            "creation_report",
+            "update_report",
+            "studio_workspace",
+            "ovp",
+            "inventory",
+            "sofia",
+            "editorial",
+            "report",
+            "advanced",
+            "unsupported_binary",
+            "unknown",
+            "OVP",
+            "RECENSEMENT_EXCEL",
+            "BI_RANA",
+            "SOFIA_FMO",
+            "PLAN_SESSIONS",
+            "MANUAL",
+            "DRUPAL_CURRENT",
+            "CREATION_REPORT",
+            "UPDATE_REPORT",
+            "DEFAULT"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "sourceType"
+      ],
+      "properties": {
+        "sourceType": {
+          "type": "string"
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "fieldPath": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "manualValidation": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "required": [
+        "field",
+        "op"
+      ],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "ignore",
+            "add",
+            "remove",
+            "replace",
+            "clear",
+            "delete"
+          ]
+        },
+        "values": {},
+        "explicitDeleteMarker": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "canonicalId",
+        "operations"
+      ],
+      "properties": {
+        "canonicalId": {
+          "type": "string"
+        },
+        "intentionOvpId": {
+          "type": "string"
+        },
+        "exportId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "drupalUrl": {
+          "type": "string"
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "expectedBefore": {
+          "type": "object"
+        },
+        "expectedAfter": {
+          "type": "object"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "inventoryUpdate": {
+          "type": "object"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

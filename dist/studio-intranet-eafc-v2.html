@@ -1,0 +1,440 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio Intranet EAFC v2</title><style>:root{font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;color:#172033;background:#f5f7fb}body{margin:0}.hero{display:flex;justify-content:space-between;gap:1rem;padding:1.5rem 2rem;background:linear-gradient(135deg,#0b4ea2,#3f7bd9);color:white}.hero h1{margin:.1rem 0}.version{text-align:right}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;padding:1rem 2rem}.card{border:1px solid #d8e0ee;background:white;border-radius:16px;padding:1rem;text-align:left;box-shadow:0 8px 20px #20305012;cursor:pointer}.card.active,.step.active{outline:3px solid #2f6feb}.toolbar,.steps,.statusbar{margin:.5rem 2rem;padding:.75rem;background:white;border-radius:12px;box-shadow:0 4px 12px #2030500d}.button,button{border:0;border-radius:10px;background:#e8eefb;padding:.55rem .8rem;margin:.15rem;cursor:pointer}button.primary,button:not(:disabled):hover{background:#2f6feb;color:white}button:disabled{opacity:.45;cursor:not-allowed}.step.done{background:#dff7ea}.drop{margin:1rem 2rem;padding:2rem;border:3px dashed #8aa4d6;border-radius:18px;background:#fff;text-align:center;display:flex;flex-direction:column;gap:.5rem}.drop.drag{background:#eaf2ff}.drop input{margin:auto}.grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:1rem;margin:1rem 2rem}.main-panel,#side,#export{background:white;border-radius:14px;padding:1rem;box-shadow:0 4px 12px #2030500d;overflow:auto}table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{border-bottom:1px solid #e5e9f2;padding:.45rem;vertical-align:top}th{position:sticky;top:0;background:#f8fafc}pre{background:#0f172a;color:#dbeafe;padding:.75rem;border-radius:10px;overflow:auto;max-height:360px}.error{color:#a40000}.warning{color:#8a5a00}.ok{color:#176b31}code{background:#eef2ff;padding:.1rem .25rem;border-radius:4px}@media(max-width:900px){.grid{grid-template-columns:1fr}.hero{display:block}.version{text-align:left}}
+</style></head><body><div id="app"></div><script >
+// src/studio/core/constants.js
+const STUDIO_VERSION = '2.0.0-beta.1';
+const SCHEMA_VERSION = '2.0.0';
+const STORAGE_KEY = 'studio-intranet-eafc-v2:workspace';
+const WORKFLOWS = {
+  create: 'create',
+  updateContent: 'update_content',
+  updateSofia: 'update_sofia',
+  updateTaxonomy: 'update_taxonomy'
+};
+const STEPS = ['Choix du workflow', 'Import des sources', 'Contrôle des fichiers', 'Correspondances', 'Modifications', 'Prévisualisation', 'Contrôles', 'Export', 'Import du rapport Agent', 'Actualisation du recensement'];
+const SOURCE_TYPES = [
+  'json_ovp', 'json_ovp_batch', 'bi_rana', 'plan_sessions_sofia', 'recensement_excel',
+  'demande_modification_excel', 'legacy_mapping_drupal_sofia', 'legacy_create_pages',
+  'legacy_update_payload', 'legacy_taxonomy_payload', 'creation_report', 'update_report', 'studio_workspace', 'unsupported_binary', 'unknown'
+];
+const MATCH_PRIORITY = ['nodeId', 'intentionOvpId', 'sourceOvp', 'exportId', 'dispositifCode', 'moduleCode', 'groupCode', 'rne', 'department', 'normalizedTitle'];
+const TAXONOMY_OPERATIONS = ['add', 'remove', 'replace', 'clear'];
+const CONTENT_OPERATIONS = ['add', 'replace', 'delete'];
+const EXPLICIT_DELETE_MARKERS = ['__DELETE__', '[DELETE]', 'SUPPRIMER', '[SUPPRIMER]', '<SUPPRIMER>'];
+const CREATION_REQUIRED_THEMATICS = ['EAFC poitiers', '6331'];
+const DEPARTMENT_PREFIX_RE = /^\s*0?(16|17|79|86)(?:\s*[\/,+-]\s*0?(16|17|79|86))?\s*[-–—:]\s*/i;
+const FIELD_ALIASES = {
+  nodeId: ['Node ID Drupal', 'Node ID', 'NID', 'ID Drupal', 'Identifiant Drupal', 'Id'],
+  drupalUrl: ['Lien vers la page', 'URL', 'Lien', 'Edit URL', 'Page Drupal'],
+  title: ['Titre', 'Titre du parcours', 'Title', 'Libellé'],
+  intentionOvpId: ['ID intention', 'Identifiant intention', 'Intention OVP', 'Source OVP'],
+  exportId: ['Export ID', 'Identifiant export', 'Fiche formation export OVP'],
+  dispositifCode: ['Dispositif', 'Code dispositif', 'CODE DISPOSITIF'],
+  moduleCode: ['Module', 'Code module', 'CODE MODULE'],
+  groupCode: ['Groupe', 'Code groupe'],
+  rne: ['RNE', 'UAI', 'Code RNE'],
+  department: ['Département', 'Departement', 'Dept', 'Territoire'],
+  themes: ['Thématiques saisies', 'Thematiques saisies', 'Thématique', 'Theme'],
+  audiences: ['Métiers', 'Metiers', 'Publics', 'Métiers ou publics', 'Public concerné'],
+  objective: ['Objectif', 'Objectifs'],
+  body: ['Contenu', 'Description', 'HTML principal'],
+  accessibility: ['Accessibilité', 'Accessibilite'],
+  setup: ['Mise en place', 'Organisation'],
+  headcount: ['Effectif'],
+  totalDuration: ['Durée totale', 'Duree totale'],
+  inPersonDuration: ['Présentiel', 'Presentiel'],
+  remoteDuration: ['Distanciel'],
+  editorialPublic: ['Public éditorial', 'Public editorial'],
+  prerequisites: ['Prérequis', 'Prerequis'],
+  contact: ['Contact'],
+  dates: ['Dates', 'Date'],
+  location: ['Lieu', 'Lieux'],
+  link: ['Lien de préinscription', 'Préinscription', 'Lien']
+};
+
+
+// src/studio/core/utils.js
+
+const nowIso = () => new Date().toISOString();
+function uid(prefix = 'id') { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+function removeAccents(value = '') { return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function normalizeText(value = '') { return removeAccents(value).toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim(); }
+function normalizeColumnName(value = '') { return normalizeText(value).replace(/[^a-z0-9]+/g, ' ').trim(); }
+function stripDepartmentPrefix(title = '') { return String(title).replace(DEPARTMENT_PREFIX_RE, '').trim(); }
+function normalizeTitle(title = '') { return normalizeText(stripDepartmentPrefix(title)).replace(/[^a-z0-9]+/g, ' ').trim(); }
+function splitTags(value) { if (Array.isArray(value)) return value.flatMap(splitTags); return String(value || '').split(/[;,|\n]+/).map(v => v.trim()).filter(Boolean); }
+function unique(values) { const list = Array.isArray(values) ? values : (values === undefined || values === null ? [] : [values]); return [...new Map(list.filter(v => v !== undefined && v !== null && String(v).trim() !== '').map(v => [normalizeText(v), String(v).trim()])).values()]; }
+function escapeHtml(value = '') { return String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+async function sha256Hex(blobOrText) { const buf = typeof blobOrText === 'string' ? new TextEncoder().encode(blobOrText) : await blobOrText.arrayBuffer(); const hash = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+function downloadText(filename, text, type = 'application/json') { const blob = new Blob([text], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function parseJsonPossiblyFenced(text) { const cleaned = String(text).replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim(); try { return JSON.parse(cleaned); } catch { const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}'); if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1)); throw new Error('JSON illisible : vérifiez le format ou le bloc Markdown copié.'); } }
+function chunked(items, worker, chunk = 200) { return new Promise((resolve, reject) => { let i = 0; const out = []; const step = () => { try { const end = Math.min(i + chunk, items.length); for (; i < end; i += 1) out.push(worker(items[i], i)); if (i < items.length) setTimeout(step, 0); else resolve(out); } catch (err) { reject(err); } }; step(); }); }
+function toCsv(rows) { return rows.map(row => row.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\n'); }
+
+// src/studio/core/model.js
+
+function createWorkspace() {
+  return { schemaVersion: '2.0.0', workspaceId: uid('workspace'), name: 'Espace EAFC', createdAt: nowIso(), updatedAt: nowIso(), currentWorkflow: 'create', stepIndex: 0, sources: [], pages: [], matches: [], diffs: [], reports: [], rejectedMatches: [], selections: {}, removedTargets: {}, controls: [], history: [], undo: [], redo: [], advanced: false };
+}
+function makePage(seed = {}) {
+  return { canonicalId: seed.canonicalId || uid('page'), intentionOvpId: seed.intentionOvpId || '', exportId: seed.exportId || '', sourceOvp: seed.sourceOvp || '', sourceTitle: seed.sourceTitle || seed.title || '', drupalTitle: seed.drupalTitle || seed.title || '', nodeId: seed.nodeId || '', drupalUrl: seed.drupalUrl || '', pageScope: seed.pageScope || 'academic', excelOrigin: seed.excelOrigin || null, taxonomies: { themes: unique(seed.themes || []), audiences: unique(seed.audiences || []), fancytreePaths: unique(seed.fancytreePaths || []), departments: unique(seed.departments || []), geography: unique(seed.geography || []) }, trainingCodes: { dispositifCode: seed.dispositifCode || '', moduleCodes: unique(seed.moduleCodes || (seed.moduleCode ? [seed.moduleCode] : [])), groups: unique(seed.groups || (seed.groupCode ? [seed.groupCode] : [])), uai: unique(seed.uai || []), rne: unique(seed.rne || (seed.rne ? [seed.rne] : [])) }, sessions: seed.sessions || [], content: { objective: seed.objective || '', body: seed.body || '', accessibility: seed.accessibility || '', setup: seed.setup || '', headcount: seed.headcount || '', totalDuration: seed.totalDuration || '', inPersonDuration: seed.inPersonDuration || '', remoteDuration: seed.remoteDuration || '', editorialPublic: seed.editorialPublic || '', prerequisites: seed.prerequisites || '', contact: seed.contact || '' }, links: seed.links || [], status: seed.status || 'imported', provenance: seed.provenance || {}, confidence: seed.confidence ?? 1, manualValidation: Boolean(seed.manualValidation), errors: seed.errors || [], warnings: seed.warnings || [], history: seed.history || [] };
+}
+function addHistory(ws, event, details = {}) { ws.history.push({ eventId: uid('event'), at: nowIso(), event, details }); ws.updatedAt = nowIso(); return ws; }
+function snapshot(ws) { return JSON.stringify({ pages: ws.pages, matches: ws.matches, diffs: ws.diffs, selections: ws.selections, removedTargets: ws.removedTargets, currentWorkflow: ws.currentWorkflow, stepIndex: ws.stepIndex }); }
+function restoreSnapshot(ws, raw) { const data = JSON.parse(raw); Object.assign(ws, data, { updatedAt: nowIso() }); }
+function withUndo(ws, label, mutator) { ws.undo.push({ label, at: nowIso(), snapshot: snapshot(ws) }); ws.redo = []; mutator(ws); addHistory(ws, label); }
+function undo(ws) { const item = ws.undo.pop(); if (!item) return false; ws.redo.push({ label: `redo:${item.label}`, at: nowIso(), snapshot: snapshot(ws) }); restoreSnapshot(ws, item.snapshot); addHistory(ws, 'undo', { label: item.label }); return true; }
+function redo(ws) { const item = ws.redo.pop(); if (!item) return false; ws.undo.push({ label: `undo:${item.label}`, at: nowIso(), snapshot: snapshot(ws) }); restoreSnapshot(ws, item.snapshot); addHistory(ws, 'redo', { label: item.label }); return true; }
+
+
+
+
+
+
+
+
+
+// src/studio/core/operations.js
+
+
+function isExplicitDelete(value) { return EXPLICIT_DELETE_MARKERS.includes(String(value || '').trim()); }
+function isBlankIgnore(value) { return value === undefined || value === null || String(value).trim() === ''; }
+function applyTaxonomyOperation(before = [], op = 'add', values = []) {
+  const incoming = unique(Array.isArray(values) ? values : [values]);
+  const current = unique(before);
+  if (!TAXONOMY_OPERATIONS.includes(op)) throw new Error(`Opération taxonomique inconnue: ${op}`);
+  if (op === 'add') return unique([...current, ...incoming]);
+  if (op === 'remove') return current.filter(v => !incoming.some(i => normalizeText(i) === normalizeText(v)));
+  if (op === 'replace') return incoming;
+  if (op === 'clear') return [];
+}
+function makeDiff({ field, currentValue, requestedValue, source = 'manual', target, confidence = 1, reason = '' }) {
+  if (isBlankIgnore(requestedValue)) return null;
+  const op = isExplicitDelete(requestedValue) ? 'delete' : 'replace';
+  if (op === 'delete' && !isExplicitDelete(requestedValue)) throw new Error('Suppression non explicite');
+  return { diffId: `${target?.canonicalId || 'target'}:${field}`, selected: true, field, currentValue: currentValue ?? '', requestedValue, futureValue: op === 'delete' ? '' : requestedValue, operation: op, source, confidence, targetId: target?.canonicalId || '', reason, warnings: [] };
+}
+function makeTaxonomyDiff({ field, currentValues = [], requestedValues = [], operation = 'add', target, source = 'manual' }) {
+  const incoming = unique(requestedValues);
+  if (!incoming.length && operation !== 'clear') return null;
+  const future = applyTaxonomyOperation(currentValues, operation, incoming);
+  const warnings = [];
+  if (operation === 'replace') warnings.push('Opération destructive : des valeurs existantes peuvent disparaître.');
+  if (operation === 'clear') warnings.push('Confirmation renforcée requise : toutes les valeurs seront vidées.');
+  return { diffId: `${target?.canonicalId || 'target'}:${field}`, selected: true, field, currentValue: currentValues, requestedValue: incoming, futureValue: future, operation, source, confidence: 1, targetId: target?.canonicalId || '', reason: 'Modification taxonomique explicite', warnings };
+}
+function pruneEmptyOperations(operations) { return (operations || []).filter(op => op && op.op !== 'ignore' && (op.op === 'clear' || op.op === 'delete' || (Array.isArray(op.values) ? op.values.length : op.values !== undefined && op.values !== ''))); }
+function diffToOperation(diff) { return { field: diff.field, op: diff.operation, values: diff.operation === 'delete' ? undefined : diff.requestedValue, explicitDeleteMarker: diff.operation === 'delete' ? '__DELETE__' : undefined, provenance: { sourceType: diff.source, confidence: diff.confidence, fieldPath: diff.field } }; }
+
+// src/studio/core/workflows.js
+
+
+
+
+
+const EDITORIAL_FIELDS = ['drupalTitle','objective','body','accessibility','setup','headcount','totalDuration','inPersonDuration','remoteDuration','editorialPublic','prerequisites','contact'];
+const SOFIA_FIELDS = ['dates','times','locations','modalities','preRegistrationUrl','publicationStart','publicationEnd','capacity','registered','remainingSeats'];
+const TAXONOMY_FIELDS = ['themes','audiences'];
+
+const WORKFLOW_SOURCE_SLOTS = {
+  [WORKFLOWS.create]: [{ slot: 'ovp', label: 'JSON OVP', accepts: ['json_ovp','json_ovp_batch'] }],
+  [WORKFLOWS.updateSofia]: [{ slot: 'inventory', label: 'Recensement Drupal', accepts: ['recensement_excel'] }, { slot: 'sofia', label: 'Export Sofia-FMO plan et sessions', accepts: ['plan_sessions_sofia'] }],
+  [WORKFLOWS.updateContent]: [{ slot: 'inventory', label: 'Recensement Drupal', accepts: ['recensement_excel'] }, { slot: 'editorial', label: 'Excel des demandes éditoriales', accepts: ['demande_modification_excel'] }],
+  [WORKFLOWS.updateTaxonomy]: [{ slot: 'inventory', label: 'Recensement Drupal', accepts: ['recensement_excel'] }]
+};
+
+function pageFromOvpCourse(course = {}, source = {}) {
+  const meta = course.meta || {};
+  return makePage({
+    intentionOvpId: course.id || course.identifiant || '',
+    exportId: course.exportId || course.ficheFormation || '',
+    sourceOvp: source.name || '',
+    title: course.title || course.titre || '',
+    themes: splitTags(course.thematique || meta.thematique),
+    audiences: splitTags(meta.publicConcerne || course.publicConcerne || course.publics),
+    objective: meta.objectif || course.objectif || '',
+    body: meta.contenu || course.contenu || '',
+    prerequisites: meta.prerequis || course.prerequis || '',
+    accessibility: meta.accessibilite || course.accessibilite || '',
+    setup: meta.miseEnPlace || course.miseEnPlace || '',
+    contact: meta.contact || course.contact || '',
+    editorialPublic: meta.publicConcerne || '',
+    headcount: course.effectif || '',
+    totalDuration: course.dureeTotale || '',
+    inPersonDuration: course.presentiel || '',
+    remoteDuration: course.distanciel || '',
+    sessions: buildOvpSessions(course),
+    provenance: { ovp: { source: source.name || 'OVP', courseId: course.id || '' } }
+  });
+}
+
+function buildOvpSessions(course) {
+  const sessions = [];
+  for (const item of course.sessionsPresentiel || []) sessions.push({ modality: 'presentiel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
+  for (const item of course.sessionsDistanciel || []) sessions.push({ modality: 'distanciel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
+  if (course.meta?.datesLieux) sessions.push({ modality: '', dates: splitTags(course.meta.datesLieux), lieux: [] });
+  return sessions;
+}
+
+function pagesFromOvpJson(obj, source = {}) {
+  const courses = obj?.plan?.courses || obj?.courses || obj?.items || obj?.parcours || [];
+  return courses.filter(c => normalizeText(c.typeCandidature) !== 'individuelle').map(c => pageFromOvpCourse(c, source));
+}
+
+function normalizeInventoryRows(rows = []) { return rows.map((row, index) => makePage({ ...row, canonicalId: row.canonicalId, title: row.drupalTitle || row.sourceTitle || row.title, nodeId: row.nodeId, drupalUrl: row.drupalUrl, excelOrigin: row.excelOrigin || { sheetName: row.sheetName || 'Recensement', rowNumber: row.rowNumber || index + 2 } })); }
+
+function normalizeSofiaRow(row = {}) {
+  const max = numberValue(pick(row, ['Préinscriptions : Préinscrits : nombre maximal','nombre maximal','capacite','capacity']));
+  const registered = numberValue(pick(row, ['Préinscriptions : Préinscrits : nombre total','nombre total','inscrits','registered']));
+  const remaining = Number.isFinite(max) && Number.isFinite(registered) ? max - registered : '';
+  return {
+    dispositifCode: pick(row, ['Dispositif : code','Code dispositif','dispositifCode']), dispositifLabel: pick(row, ['Dispositif : libellé','Dispositif : libelle']),
+    moduleCode: pick(row, ['Module : code','Code module','moduleCode']), moduleLabel: pick(row, ['Module : libellé','Module : libelle']),
+    groupCode: pick(row, ['Groupe : identifiant','Groupe','groupCode']), groupLabel: pick(row, ['Groupe : libellé','Groupe : libelle']), session: pick(row, ['Session']),
+    start: pick(row, ['Début','Debut','Date début']), end: pick(row, ['Fin','Date fin']), duration: pick(row, ['Durée','Duree']), modality: pick(row, ['Modalité','Modalite']),
+    uai: pick(row, ['UAI','RNE']), location: pick(row, ['Lieu','Lieux']), publicationStart: pick(row, ['Préinscriptions : Publication : début','Publication début']), publicationEnd: pick(row, ['Préinscriptions : Publication : fin','Publication fin']),
+    preRegistrationUrl: pick(row, ['Préinscriptions : Publication : lien préinscription','Lien de préinscription','Préinscription']), capacity: max, registered, remainingSeats: remaining, status: pick(row, ['Dernier statut']), statusLabel: pick(row, ['Libellé statut','Libelle statut']), warnings: Number.isFinite(remaining) && remaining < 0 ? ['Places restantes négatives : vérifier Sofia-FMO.'] : []
+  };
+}
+
+function buildSofiaWorkflow(inventoryPages, sofiaRows) {
+  const normalizedRows = sofiaRows.map(normalizeSofiaRow);
+  const matches = normalizedRows.map(row => matchSofia(row, inventoryPages));
+  const diffs = matches.flatMap(match => match.target ? sofiaDiffs(match.target, match.row, match) : []);
+  return { rows: normalizedRows, matches, diffs };
+}
+
+function matchSofia(row, inventoryPages) {
+  const candidates = inventoryPages.map(page => scoreSofia(row, page)).filter(c => c.score > 0).sort((a,b) => b.score - a.score);
+  const best = candidates[0];
+  const conflicts = [];
+  if (!best) conflicts.push('Aucune page Drupal recensée ne correspond aux clés Sofia-FMO.');
+  if (best && candidates[1] && candidates[1].score >= best.score - 0.05) conflicts.push('Plusieurs pages possibles : sélection manuelle requise.');
+  return { row, target: best?.page || null, nodeId: best?.page?.nodeId || '', score: best?.score || 0, method: best?.method || 'unresolved', reasons: best?.reasons || [], conflicts, alternatives: candidates.slice(1,4).map(c => ({ nodeId: c.page.nodeId, title: c.page.drupalTitle, score: c.score })) };
+}
+function scoreSofia(row, page) {
+  const reasons = []; let score = 0, method = 'none';
+  const checks = [ ['dispositifCode', row.dispositifCode, page.trainingCodes.dispositifCode, .35], ['moduleCode', row.moduleCode, page.trainingCodes.moduleCodes?.[0], .25], ['groupCode', row.groupCode, page.trainingCodes.groups?.[0], .2], ['uai', row.uai, page.trainingCodes.rne?.[0] || page.trainingCodes.uai?.[0], .12], ['department', inferDept(row.uai) || inferDept(row.location), page.taxonomies.departments?.[0], .05], ['normalizedTitle', row.moduleLabel || row.dispositifLabel, page.drupalTitle || page.sourceTitle, .03] ];
+  for (const [key, a, b, pts] of checks) { if (!a || !b) continue; const ok = key === 'normalizedTitle' ? normalizeTitle(a) === normalizeTitle(b) : normalizeText(a) === normalizeText(b); if (ok) { score += pts; method = method === 'none' ? key : `${method}+${key}`; reasons.push(`Égalité ${key}`); } }
+  return { page, score: Math.round(score * 100) / 100, method, reasons };
+}
+function sofiaDiffs(page, row, match) {
+  const values = { dates: [row.start, row.end].filter(Boolean).join(' → '), times: row.duration, locations: row.location, modalities: row.modality, preRegistrationUrl: row.preRegistrationUrl, publicationStart: row.publicationStart, publicationEnd: row.publicationEnd, capacity: row.capacity, registered: row.registered, remainingSeats: row.remainingSeats };
+  return Object.entries(values).filter(([,v]) => v !== '' && v !== undefined && v !== null).map(([field, requestedValue]) => ({ diffId: `${page.canonicalId}:${field}:sofia`, selected: true, field, currentValue: currentSofiaValue(page, field), requestedValue, futureValue: requestedValue, operation: 'replace', source: 'SOFIA_FMO', confidence: match.score, targetId: page.canonicalId, nodeId: page.nodeId, reason: match.reasons.join('; '), warnings: [...(row.warnings || []), ...(match.conflicts || [])] }));
+}
+function currentSofiaValue(page, field) { const s = page.sessions?.[0] || {}; return { dates: (s.dates || []).join('; '), locations: (s.lieux || []).join('; '), modalities: s.modality || s.modalities, preRegistrationUrl: s.preRegistrationUrl, capacity: s.capacity, registered: s.registered, remainingSeats: s.remainingSeats }[field] || ''; }
+
+function buildEditorialWorkflow(inventoryPages, requestPages) {
+  const matches = requestPages.map(req => matchEditorial(req, inventoryPages));
+  const diffs = matches.flatMap(match => match.target ? editorialDiffs(match.request, match.target, match) : []);
+  return { matches, diffs };
+}
+function matchEditorial(request, inventoryPages) {
+  const candidates = inventoryPages.map(page => scoreEditorial(request, page)).filter(c => c.score > 0).sort((a,b) => b.score - a.score);
+  const best = candidates[0]; const conflicts = [];
+  if (!best) conflicts.push('Aucune page du recensement ne correspond à la demande.');
+  if (best && candidates[1] && candidates[1].score >= best.score - .05) conflicts.push('Correspondance éditoriale ambiguë.');
+  return { request, target: best?.page || null, nodeId: best?.page?.nodeId || '', score: best?.score || 0, method: best?.method || 'unresolved', reasons: best?.reasons || [], conflicts };
+}
+function scoreEditorial(req, page) {
+  const checks = [ ['nodeId', req.nodeId, page.nodeId, 1], ['intentionOvpId', req.intentionOvpId, page.intentionOvpId, .85], ['exportId', req.exportId, page.exportId, .75], ['dispositifCode', req.trainingCodes?.dispositifCode, page.trainingCodes?.dispositifCode, .6], ['normalizedTitle', req.drupalTitle || req.sourceTitle, page.drupalTitle || page.sourceTitle, .4] ];
+  let best = { page, score: 0, method: 'none', reasons: [] };
+  for (const [key,a,b,score] of checks) if (a && b && (key === 'normalizedTitle' ? normalizeTitle(a) === normalizeTitle(b) : normalizeText(a) === normalizeText(b))) best = { page, score, method: key, reasons: [`Égalité ${key}`] };
+  return best;
+}
+function editorialDiffs(request, target, match) {
+  return EDITORIAL_FIELDS.map(field => makeDiff({ field, currentValue: pageField(target, field), requestedValue: pageField(request, field), source: 'DEMANDE_EDITORIALE', target, confidence: match.score, reason: match.reasons.join('; ') })).filter(Boolean).filter(d => String(d.currentValue) !== String(d.futureValue)).map(d => ({ ...d, nodeId: target.nodeId, warnings: [...d.warnings, ...match.conflicts] }));
+}
+function pageField(page, field) { if (field === 'drupalTitle') return page.drupalTitle || page.sourceTitle || ''; return page.content?.[field] || ''; }
+
+function buildTaxonomyWorkflow(inventoryPages, selection) {
+  const selected = new Set(selection.nodeIds || []);
+  const pages = inventoryPages.filter(p => selected.has(String(p.nodeId)));
+  return pages.flatMap(page => [
+    makeTaxonomyDiff({ field: 'themes', currentValues: page.taxonomies.themes, requestedValues: selection.themes || [], operation: selection.themeOperation || 'add', target: page, source: 'MANUAL_TAXONOMY' }),
+    makeTaxonomyDiff({ field: 'audiences', currentValues: page.taxonomies.audiences, requestedValues: normalizeAudienceValues(selection.audiences || []), operation: selection.audienceOperation || 'add', target: page, source: 'MANUAL_TAXONOMY' })
+  ].filter(Boolean).map(d => ({ ...d, nodeId: page.nodeId })));
+}
+function normalizeAudienceValues(values) { return unique(values.map(v => typeof v === 'string' ? v : [v.category, v.label].filter(Boolean).join(' > '))); }
+
+function workflowOperations(diffs, workflow) {
+  const allowed = workflow === WORKFLOWS.updateSofia ? SOFIA_FIELDS : workflow === WORKFLOWS.updateContent ? EDITORIAL_FIELDS : workflow === WORKFLOWS.updateTaxonomy ? TAXONOMY_FIELDS : ['page'];
+  return pruneEmptyOperations(diffs.filter(d => d.selected !== false && allowed.includes(d.field)).map(diffToOperation));
+}
+function pick(row, names) { const keys = Object.keys(row || {}); const found = keys.find(k => names.some(n => normalizeText(k) === normalizeText(n))); return found ? row[found] : ''; }
+function numberValue(v) { if (v === '' || v === null || v === undefined) return ''; const n = Number(String(v).replace(',', '.').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? n : ''; }
+function inferDept(text = '') { const m = String(text).match(/\b(16|17|79|86)\b/); return m?.[1] || ''; }
+
+// src/studio/adapters/universal.js
+
+
+
+
+async function inspectFile(file, forcedType = '') {
+  const fingerprint = await sha256Hex(file);
+  const binarySupport = getBinarySupport(file.name);
+  if (!forcedType && binarySupport === 'unsupported') {
+    return skippedBinarySource(file, fingerprint, `Fichier binaire non pris en charge (${extensionOf(file.name) || 'extension inconnue'}) : ignoré sans bloquer l'extraction.`);
+  }
+  let text = '';
+  try {
+    if (shouldReadAsText(file.name, file.type, forcedType)) text = await file.text();
+  } catch (err) {
+    if (!forcedType) return skippedBinarySource(file, fingerprint, `Lecture impossible : ${err.message}. Fichier ignoré sans bloquer l'extraction.`);
+    text = '';
+  }
+  const detectedType = forcedType || detectType(file, text);
+  const parsed = await parseByType(file, text, detectedType);
+  return { sourceId: fingerprint.slice(0, 16), type: detectedType, name: file.name, lastModified: file.lastModified ? new Date(file.lastModified).toISOString() : '', size: file.size, rows: parsed.rows?.length || parsed.pages?.length || 0, sheets: parsed.workbook?.sheets?.length || 0, status: parsed.errors?.length ? 'warning' : 'ok', warnings: parsed.warnings || [], errors: parsed.errors || [], fingerprint, parsed };
+}
+function shouldReadAsText(name, mime = '', forcedType = '') { return Boolean(forcedType) || /\.(json|csv|txt|html?|xls|xlsx)$/i.test(name) || mime.includes('json') || mime.includes('text'); }
+function extensionOf(name = '') { return (String(name).match(/\.([^.]+)$/)?.[1] || '').toLowerCase(); }
+function getBinarySupport(name = '') { const ext = extensionOf(name); if (!ext) return 'unknown'; if (['json','csv','txt','html','htm','xls','xlsx'].includes(ext)) return 'supported'; if (['pdf','doc','docx','odt','ods','png','jpg','jpeg','gif','webp','zip','7z','rar','ppt','pptx'].includes(ext)) return 'unsupported'; return 'unknown'; }
+function skippedBinarySource(file, fingerprint, message) { return { sourceId: fingerprint.slice(0, 16), type: 'unsupported_binary', name: file.name, lastModified: file.lastModified ? new Date(file.lastModified).toISOString() : '', size: file.size, rows: 0, sheets: 0, status: 'skipped', warnings: [message], errors: [], fingerprint, parsed: { rows: [], pages: [], warnings: [message], skipped: true } }; }
+function detectType(file, text = '') {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.studio.json')) return 'studio_workspace';
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) return lower.includes('recensement') || lower.includes('suivi') ? 'recensement_excel' : 'demande_modification_excel';
+  if (lower.endsWith('.csv')) return lower.includes('rana') ? 'bi_rana' : lower.includes('session') || lower.includes('sofia') ? 'plan_sessions_sofia' : 'demande_modification_excel';
+  try { const obj = parseJsonPossiblyFenced(text); if (obj.type === 'create_pages') return 'legacy_create_pages'; if (obj.type === 'update_drupal_pages') return 'legacy_update_payload'; if (obj.type === 'bulk_drupal_theme_public_update') return 'legacy_taxonomy_payload'; if (obj.type === 'drupal_sofia_mapping' || obj.mappingVersion) return 'legacy_mapping_drupal_sofia'; if (obj.schemaVersion === '2.0.0' && obj.workspaceId) return 'studio_workspace'; if (obj.schemaVersion === '2.0.0' && obj.jobId) return 'legacy_update_payload'; if (obj.reportId || obj.items?.some?.(x => x.nodeId && x.status)) return 'update_report'; if (obj.plan?.courses || Array.isArray(obj) || obj.parcours || obj.intentions || obj.items) return 'json_ovp'; } catch {}
+  if (/\bovp\b|intentions?|parcours/i.test(text.slice(0, 1000))) return 'json_ovp';
+  return 'unknown';
+}
+async function parseByType(file, text, type) {
+  try {
+    if (type.includes('json') || type.startsWith('legacy') || type.endsWith('report') || type === 'studio_workspace') return parseJsonSource(text, type);
+    if (/\.csv$/i.test(file.name)) return parseTabular(text, type, ';');
+    if (/\.html?$|\.xls$/i.test(file.name)) return parseHtmlTable(text, type);
+    if (/\.xlsx$/i.test(file.name)) return parseXlsxDiagnostic(file, type);
+    return { rows: [], pages: [], warnings: ['Type non reconnu : correction manuelle possible.'] };
+  } catch (err) { return { rows: [], pages: [], errors: [err.message] }; }
+}
+function parseJsonSource(text, type) {
+  const obj = parseJsonPossiblyFenced(text);
+  if (type === 'studio_workspace') return { workspace: obj, pages: obj.pages || [] };
+  if (type === 'legacy_create_pages') return { raw: obj, pages: (obj.items || []).map(item => makePage({ title: item.title, sourceTitle: item.title, exportId: item.ficheFormation || item.exportId, themes: [item.theme, ...(item.thematics || [])], audiences: item.publics, departments: item.departmentCodes, accessibility: item.accessibility, body: item.html || item.content, provenance: { legacy: { source: 'create_pages' } } })) };
+  if (type === 'legacy_update_payload' || type === 'legacy_taxonomy_payload') return { raw: obj, rows: obj.targets || obj.items || [], pages: (obj.targets || []).map(t => makePage({ nodeId: t.nodeId, drupalUrl: t.pageUrl || t.drupalUrl, title: t.title, themes: t.expectedBefore?.theme, audiences: t.expectedBefore?.metiersPublics })) };
+  if (type === 'legacy_mapping_drupal_sofia') return { raw: obj, rows: obj.items || obj.mappings || [], pages: (obj.items || obj.mappings || []).map(i => makePage({ nodeId: i.nodeId, title: i.title, dispositifCode: i.dispositifCode, moduleCode: i.moduleCode, groupCode: i.groupCode, sourceOvp: i.sourceOvp })) };
+  if (type === 'update_report' || type === 'creation_report') return { raw: obj, rows: obj.items || [], pages: (obj.items || []).map(i => makePage({ nodeId: i.nodeId, drupalUrl: i.drupalUrl || i.pageUrl, status: i.status, title: i.title })) };
+  if (type === 'json_ovp') return { raw: obj, pages: pagesFromOvpJson(obj, { name: 'JSON OVP' }) };
+  const items = Array.isArray(obj) ? obj : obj.items || obj.parcours || obj.intentions || [];
+  return { raw: obj, pages: items.map((item, index) => makePage({ intentionOvpId: item.id || item.intentionId || item.identifiant || String(index + 1), exportId: item.exportId || item.ficheFormation, sourceOvp: item.source || item.sourceOvp || '', title: item.title || item.titre || item.libelle, themes: splitTags(item.theme || item.thematique), audiences: splitTags(item.publics || item.metiers), body: item.contenu || item.description || item.html, objective: item.objectif, departments: splitTags(item.department || item.departement || item.departments) })) };
+}
+function parseTabular(text, type, delimiter = ';') {
+  const lines = text.split(/\r?\n/).filter(Boolean); const headers = splitCsvLine(lines[0] || '', delimiter); const rows = lines.slice(1).map((line, idx) => Object.fromEntries(splitCsvLine(line, delimiter).map((v, i) => [headers[i] || `Colonne ${i + 1}`, v])));
+  return { rows, pages: rows.map((r, i) => rowToPage(r, { sheetName: 'CSV', rowNumber: i + 2 })), diagnostics: diagnoseColumns(headers) };
+}
+function splitCsvLine(line, delimiter) { const out = []; let cell = '', q = false; for (let i = 0; i < line.length; i += 1) { const ch = line[i]; if (ch === '"' && line[i + 1] === '"') { cell += '"'; i += 1; } else if (ch === '"') q = !q; else if (ch === delimiter && !q) { out.push(cell); cell = ''; } else cell += ch; } out.push(cell); return out.map(x => x.trim()); }
+function parseHtmlTable(text) { const table = [...text.matchAll(/<tr[\s\S]*?<\/tr>/gi)].map(row => [...row[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(c => c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())); const headers = table[0] || []; const rows = table.slice(1).map(r => Object.fromEntries(r.map((v, i) => [headers[i] || `Colonne ${i + 1}`, v]))); return { rows, pages: rows.map((r, i) => rowToPage(r, { sheetName: 'HTML', rowNumber: i + 2 })), diagnostics: diagnoseColumns(headers) }; }
+async function parseXlsxDiagnostic(file, type) { return { workbook: { sheets: [{ name: 'Classeur XLSX', index: 1, rows: [], merges: [], headers: [], formulasPreserved: true, formatsPreserved: 'partiel' }] }, rows: [], pages: [], warnings: ['Lecture XLSX structurelle préparée : le parseur complet sera activé avec les fixtures du classeur réel absent du dépôt. Le fichier original ne sera jamais modifié.'], diagnostics: { recognized: [], unknown: [], note: 'Conservation ordre/onglets/en-têtes multi-lignes/cellules fusionnées prévue par adaptateur xlsx.' } }; }
+function getValue(row, key) { const aliases = FIELD_ALIASES[key] || [key]; const found = Object.keys(row).find(k => aliases.some(a => normalizeColumnName(k) === normalizeColumnName(a))); return found ? row[found] : ''; }
+function rowToPage(row, origin) { return makePage({ nodeId: getValue(row, 'nodeId'), drupalUrl: getValue(row, 'drupalUrl'), intentionOvpId: getValue(row, 'intentionOvpId'), exportId: getValue(row, 'exportId'), title: getValue(row, 'title'), dispositifCode: getValue(row, 'dispositifCode'), moduleCode: getValue(row, 'moduleCode'), groupCode: getValue(row, 'groupCode'), rne: getValue(row, 'rne'), departments: splitTags(getValue(row, 'department')), themes: splitTags(getValue(row, 'themes')), audiences: splitTags(getValue(row, 'audiences')), objective: getValue(row, 'objective'), body: getValue(row, 'body'), accessibility: getValue(row, 'accessibility'), setup: getValue(row, 'setup'), headcount: getValue(row, 'headcount'), totalDuration: getValue(row, 'totalDuration'), inPersonDuration: getValue(row, 'inPersonDuration'), remoteDuration: getValue(row, 'remoteDuration'), editorialPublic: getValue(row, 'editorialPublic'), prerequisites: getValue(row, 'prerequisites'), contact: getValue(row, 'contact'), excelOrigin: origin, provenance: { row: { source: origin.sheetName } } }); }
+function diagnoseColumns(headers) { const recognized = [], unknown = []; for (const h of headers) { const key = Object.keys(FIELD_ALIASES).find(k => FIELD_ALIASES[k].some(a => normalizeColumnName(a) === normalizeColumnName(h))); (key ? recognized : unknown).push({ header: h, field: key || null }); } return { recognized, unknown }; }
+function allowedSourceTypes() { return SOURCE_TYPES; }
+
+
+
+
+
+// src/studio/core/validation.js
+
+
+
+function validateWorkspace(ws) {
+  const errors = [], warnings = []; const activePages = ws.pages.filter(p => !ws.removedTargets[p.canonicalId]); const selectedDiffs = ws.diffs.filter(d => d.selected !== false && !ws.removedTargets[d.targetId]);
+  if (!activePages.length) warnings.push('Aucune page active dans le modèle canonique.');
+  ws.sources.filter(s => s.type === 'unknown').forEach(s => errors.push(`Fichier source non reconnu: ${s.name}`));
+  if (ws.currentWorkflow !== WORKFLOWS.create) selectedDiffs.forEach(d => { if (!d.nodeId) errors.push(`Mise à jour sans Node ID: ${d.diffId}`); });
+  if (ws.currentWorkflow === WORKFLOWS.create) activePages.forEach(p => { if (!p.drupalTitle && !p.sourceTitle) errors.push(`Création sans titre: ${p.canonicalId}`); if (!p.taxonomies.themes.length) errors.push(`Création sans thématique: ${p.canonicalId}`); if (!p.taxonomies.audiences.length) errors.push(`Création sans public: ${p.canonicalId}`); });
+  ws.matches.filter(m => (m.conflicts || []).length && !m.manualValidation).forEach(m => errors.push(`Correspondance ambiguë/non résolue à valider: ${m.nodeId || m.request?.canonicalId || m.requestId || 'source'}`));
+  selectedDiffs.forEach(d => { if (!d.field || !d.operation) errors.push(`Opération vide: ${d.diffId}`); if (d.operation === 'delete' && !['__DELETE__','[DELETE]','SUPPRIMER'].includes(String(d.requestedValue))) errors.push(`Suppression non explicite: ${d.diffId}`); });
+  const keys = new Set(); selectedDiffs.forEach(d => { const k = `${d.targetId}:${d.field}`; if (keys.has(k)) errors.push(`Doublon/contradiction sur ${k}`); keys.add(k); if (ws.removedTargets[d.targetId]) errors.push(`Page retirée encore présente dans les opérations: ${d.targetId}`); });
+  if (ws.currentWorkflow === WORKFLOWS.updateSofia) selectedDiffs.forEach(d => { if (!SOFIA_FIELDS.includes(d.field)) errors.push(`Champ éditorial ou taxonomie provenant par erreur de Sofia-FMO: ${d.field}`); if ((d.warnings || []).some(w => /Plusieurs pages|Plusieurs lieux|non résolue|Aucune page/.test(w))) errors.push(`Groupe/lieu Sofia-FMO non résolu: ${d.diffId}`); });
+  if (ws.currentWorkflow === WORKFLOWS.updateContent) selectedDiffs.forEach(d => { if (!EDITORIAL_FIELDS.includes(d.field)) errors.push(`Donnée Sofia-FMO ou taxonomie provenant par erreur du fichier de demandes: ${d.field}`); });
+  if (ws.currentWorkflow === WORKFLOWS.updateTaxonomy) { selectedDiffs.forEach(d => { if (!TAXONOMY_FIELDS.includes(d.field)) errors.push(`Le workflow taxonomie tente de modifier un champ interdit: ${d.field}`); if (!d.nodeId) errors.push(`Taxonomie exportée sans Node ID: ${d.diffId}`); if (['replace','clear'].includes(d.operation) && !ws.taxonomySelection?.confirmedDestructive) errors.push(`Opération destructive non confirmée: ${d.diffId}`); }); }
+  activePages.forEach(p => { const deps = p.taxonomies.departments || []; if (p.pageScope === 'bi-departmental' && deps.length !== 2) errors.push(`Page bidépartementale sans exactement deux départements: ${p.canonicalId}`); });
+  ws.controls = [...errors.map(message => ({ level: 'error', message })), ...warnings.map(message => ({ level: 'warning', message }))]; return { errors, warnings, blocking: errors.length > 0 };
+}
+function assertNoEmptyTargets(job) { return job.targets.every(t => pruneEmptyOperations(t.operations).length > 0 || job.workflow === 'create'); }
+
+
+
+
+
+// src/studio/core/exportJob.js
+
+
+
+
+function buildJob(ws) {
+  const jobId = uid('job');
+  const activePages = ws.pages.filter(p => !ws.removedTargets[p.canonicalId]);
+  const byId = new Map(activePages.map(p => [p.canonicalId, p]));
+  const targetIds = new Set(ws.diffs.filter(d => d.selected !== false && !ws.removedTargets[d.targetId]).map(d => d.targetId));
+  const pagesForTargets = ws.currentWorkflow === WORKFLOWS.create ? activePages : [...targetIds].map(id => byId.get(id)).filter(Boolean);
+  const targets = pagesForTargets.map(page => {
+    const diffs = ws.diffs.filter(d => d.selected !== false && d.targetId === page.canonicalId && !ws.removedTargets[d.targetId]);
+    const operations = ws.currentWorkflow === WORKFLOWS.create
+      ? [{ field: 'page', op: 'add', values: page, provenance: { sourceType: 'STUDIO', confidence: 1, fieldPath: 'page' } }]
+      : workflowOperations(diffs, ws.currentWorkflow);
+    return { canonicalId: page.canonicalId, intentionOvpId: page.intentionOvpId, exportId: page.exportId, nodeId: page.nodeId, drupalUrl: page.drupalUrl, resolved: Boolean(page.nodeId || ws.currentWorkflow === WORKFLOWS.create), expectedBefore: {}, expectedAfter: {}, operations: pruneEmptyOperations(operations), inventoryUpdate: { nodeId: page.nodeId, drupalUrl: page.drupalUrl, title: page.drupalTitle }, warnings: uniqueWarnings(page, diffs), errors: page.errors };
+  }).filter(t => t.operations.length);
+  return { schemaVersion: SCHEMA_VERSION, jobId, generatedAt: nowIso(), studioVersion: STUDIO_VERSION, sources: ws.sources.map(s => ({ sourceType: s.role || s.type, name: s.name, fingerprint: s.fingerprint, importedAt: s.importedAt || s.lastModified })), safety: { simulation: true, safeMode: true, confirmClicks: true, autoSave: false, stopOnConflict: true }, workflow: ws.currentWorkflow, targets, reportExpected: { format: ['json', 'xlsx'], includeInventoryUpdate: true } };
+}
+function uniqueWarnings(page, diffs) { return [...new Set([...(page.warnings || []), ...diffs.flatMap(d => d.warnings || [])])]; }
+function jobFilename(job) { return `eafc-drupal-job-v2-${job.generatedAt.slice(0,10)}-${job.jobId}.json`; }
+
+
+
+
+// src/studio/core/workspace.js
+
+
+function loadWorkspace() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || createWorkspace(); } catch { return createWorkspace(); } }
+function saveWorkspace(ws) { ws.updatedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(ws)); }
+function exportWorkspace(ws) { return JSON.stringify(ws, null, 2); }
+function importWorkspace(text) { const ws = JSON.parse(text); if (ws.schemaVersion !== '2.0.0' || !ws.workspaceId) throw new Error('Espace de travail Studio v2 invalide.'); return ws; }
+
+// src/studio/ui/app.js
+
+
+
+
+
+
+
+
+let ws = loadWorkspace(); let pendingSlot = '';
+function mount(root) { root.innerHTML = layout(); bind(root); recompute(); render(); setInterval(() => saveWorkspace(ws), 10000); }
+function layout() { return `<header class="hero"><div><h1>Studio Intranet EAFC v2</h1><p>Préparer des Jobs Drupal sans mélange de sources métier ni transmission externe.</p></div><div class="version">${STUDIO_VERSION}<br><button data-action="resume">Reprendre</button> <button data-action="history">Historique</button> <button data-action="advanced">Options avancées</button></div></header><main><section class="cards">${card('create','Créer de nouvelles pages','Sources : JSON OVP + paramètres de création.')}${card('update_sofia','Actualiser Sofia-FMO','Sources : recensement Drupal + export Sofia-FMO plan et sessions.')}${card('update_content','Appliquer des demandes éditoriales','Sources : recensement Drupal + Excel des demandes.')}${card('update_taxonomy','Modifier les thématiques et publics','Sources : recensement Drupal + choix manuels par Node ID.')}</section><section class="toolbar"><button data-action="import-report">Importer un rapport Drupal</button><button data-action="refresh-inventory">Actualiser le recensement</button><button data-action="export-workspace">Exporter workspace</button><label class="button">Importer workspace<input type="file" data-workspace hidden accept=".json,.studio.json"></label><button data-action="undo">Annuler</button><button data-action="redo">Rétablir</button></section><section class="steps" id="steps"></section><section id="workflow"></section><section class="statusbar" id="statusbar"></section><section class="grid"><div class="main-panel"><div id="sources"></div><div id="filters"></div><div id="table"></div><div id="removed"></div></div><aside id="side"></aside></section><section id="export"></section><input type="file" id="files" multiple hidden><section class="drop advanced-only" id="drop"><strong>Import universel avancé</strong><span>Utilisez de préférence les boutons spécialisés du workflow.</span></section></main>`; }
+function card(workflow, title, desc) { return `<button class="card" data-workflow="${workflow}"><h2>${title}</h2><p>${desc}</p></button>`; }
+function bind(root) { root.querySelectorAll('[data-workflow]').forEach(btn => btn.onclick = () => { ws.currentWorkflow = btn.dataset.workflow; ws.stepIndex = 1; addHistory(ws, 'workflow', { workflow: ws.currentWorkflow }); recompute(); render(); }); root.querySelector('#files').addEventListener('change', e => importFiles([...e.target.files], pendingSlot)); const drop = root.querySelector('#drop'); ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); })); ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); })); drop.addEventListener('drop', e => importFiles([...e.dataTransfer.files], 'advanced')); root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('change', onChange); root.querySelector('[data-workspace]').addEventListener('change', async e => { const f = e.target.files[0]; if (!f) return; ws = importWorkspace(await f.text()); addHistory(ws, 'workspace_imported'); recompute(); render(); }); }
+async function importFiles(files, slot = '') { for (const file of files) { let source; try { source = await inspectFile(file); } catch (err) { source = { sourceId: `error-${Date.now()}`, type: 'unsupported_binary', role: slot || 'advanced', name: file.name, lastModified: file.lastModified ? new Date(file.lastModified).toISOString() : '', size: file.size, rows: 0, sheets: 0, status: 'skipped', warnings: [`Fichier ignoré sans bloquer l'extraction : ${err.message}`], errors: [], fingerprint: '', parsed: { rows: [], pages: [], skipped: true } }; } source.importedAt = new Date().toISOString(); source.role = slot || source.type; withUndo(ws, `import_${source.role}`, s => { s.sources.push(source); s.pages.push(...(source.parsed.pages || []).map(p => ({ ...p, sourceRole: source.role }))); if (source.type === 'update_report' || source.type === 'creation_report') s.reports.push(source.parsed.raw); }); } pendingSlot = ''; recompute(); render(); }
+function sources(slot) { return ws.sources.filter(s => s.role === slot); }
+function pages(role) { return ws.pages.filter(p => p.sourceRole === role && !ws.removedTargets[p.canonicalId]); }
+function inventory() { return pages('inventory').filter(p => p.nodeId); }
+function recompute() { if (!ws.taxonomySelection) ws.taxonomySelection = { nodeIds: [], themeOperation: 'add', audienceOperation: 'add', themes: [], audiences: [], confirmedDestructive: false }; if (ws.currentWorkflow === WORKFLOWS.updateSofia) { const data = buildSofiaWorkflow(inventory(), sources('sofia').flatMap(s => s.parsed.rows || [])); ws.matches = data.matches; ws.diffs = data.diffs.filter(d => !ws.removedTargets[d.targetId]); } else if (ws.currentWorkflow === WORKFLOWS.updateContent) { const data = buildEditorialWorkflow(inventory(), pages('editorial')); ws.matches = data.matches; ws.diffs = data.diffs.filter(d => !ws.removedTargets[d.targetId]); } else if (ws.currentWorkflow === WORKFLOWS.updateTaxonomy) { ws.diffs = buildTaxonomyWorkflow(inventory(), ws.taxonomySelection).filter(d => !ws.removedTargets[d.targetId]); } else { ws.diffs = []; ws.matches = []; } validateWorkspace(ws); saveWorkspace(ws); }
+function render() { document.querySelectorAll('[data-workflow]').forEach(b => b.classList.toggle('active', b.dataset.workflow === ws.currentWorkflow)); renderSteps(); renderWorkflow(); renderStatus(); renderSources(); renderFilters(); renderTable(); renderRemoved(); renderSide(firstActivePage()); renderExport(); document.querySelectorAll('.advanced-only').forEach(el => el.style.display = ws.advanced ? '' : 'none'); }
+function renderSteps() { document.getElementById('steps').innerHTML = STEPS.map((s, i) => `<button class="step ${i === ws.stepIndex ? 'active' : ''} ${i < ws.stepIndex ? 'done' : ''}" data-step="${i}">${i+1}. ${s}</button>`).join(''); }
+function renderWorkflow() { const slots = WORKFLOW_SOURCE_SLOTS[ws.currentWorkflow] || []; const extra = ws.currentWorkflow === WORKFLOWS.updateTaxonomy ? taxonomyControls() : ''; document.getElementById('workflow').innerHTML = `<section class="workflow"><h2>${workflowTitle()}</h2><div class="source-slots">${slots.map(slot => `<button data-import-slot="${slot.slot}">Importer ${slot.label}</button><span>${sources(slot.slot).length} fichier(s)</span>`).join('')}</div>${extra}</section>`; }
+function taxonomyControls() { return `<div class="taxonomy-controls"><label>Node IDs sélectionnés <input data-tax="nodeIds" value="${escapeHtml((ws.taxonomySelection.nodeIds||[]).join(', '))}" placeholder="2524, 2525"></label><label>Opération thématiques <select data-tax="themeOperation">${ops(ws.taxonomySelection.themeOperation)}</select></label><label>Thématiques <input data-tax="themes" value="${escapeHtml((ws.taxonomySelection.themes||[]).join('; '))}"></label><label>Opération publics/métiers <select data-tax="audienceOperation">${ops(ws.taxonomySelection.audienceOperation)}</select></label><label>Publics/métiers Fancytree <input data-tax="audiences" value="${escapeHtml((ws.taxonomySelection.audiences||[]).join('; '))}" placeholder="Catégorie > Public"></label><label><input type="checkbox" data-tax="confirmedDestructive" ${ws.taxonomySelection.confirmedDestructive?'checked':''}> confirmer opérations destructives replace/clear</label></div>`; }
+function ops(value) { return ['add','remove','replace','clear'].map(v => `<option value="${v}" ${v===value?'selected':''}>${v}</option>`).join(''); }
+function workflowTitle() { return { create:'Créer de nouvelles pages', update_sofia:'Actualiser Sofia-FMO', update_content:'Appliquer des demandes éditoriales', update_taxonomy:'Modifier thématiques et publics' }[ws.currentWorkflow] || ws.currentWorkflow; }
+function renderStatus() { const activePages = relevantPages().length; const opsCount = ws.diffs.filter(d => d.selected !== false && !ws.removedTargets[d.targetId]).length; const errors = ws.controls.filter(c => c.level === 'error').length; const warnings = ws.controls.filter(c => c.level === 'warning').length; document.getElementById('statusbar').innerHTML = `<strong>Workflow:</strong> ${ws.currentWorkflow} · <strong>Pages:</strong> ${activePages} · <strong>Opérations:</strong> ${opsCount} · <strong>Erreurs:</strong> ${errors} · <strong>Alertes:</strong> ${warnings} · <strong>Mode:</strong> ${ws.advanced ? 'avancé' : 'simple'}`; }
+function renderSources() { document.getElementById('sources').innerHTML = `<h2>Sources</h2><table><thead><tr><th>Rôle</th><th>Type détecté</th><th>Nom</th><th>Lignes</th><th>Feuilles</th><th>Statut</th><th>Avertissements/erreurs</th><th>Empreinte</th></tr></thead><tbody>${ws.sources.map((s,i) => `<tr><td>${escapeHtml(s.role||'')}</td><td><select data-source-type="${i}">${allowedSourceTypes().map(t => `<option ${t===s.type?'selected':''}>${t}</option>`).join('')}</select></td><td>${escapeHtml(s.name)}</td><td>${s.rows}</td><td>${s.sheets}</td><td>${s.status}</td><td>${escapeHtml([...(s.warnings||[]),...(s.errors||[])].join('; '))}</td><td><code>${s.fingerprint.slice(0,12)}</code></td></tr>`).join('') || '<tr><td colspan="8">Aucune source importée.</td></tr>'}</tbody></table>`; document.querySelectorAll('[data-source-type]').forEach(sel => sel.onchange = () => { ws.sources[Number(sel.dataset.sourceType)].type = sel.value; addHistory(ws, 'source_type_override', { index: sel.dataset.sourceType, type: sel.value }); saveWorkspace(ws); render(); }); }
+function renderFilters() { document.getElementById('filters').innerHTML = `<h2>Recherche et actions massives</h2><input data-filter="q" placeholder="Rechercher Node ID, titre, intention, dispositif, département" value="${escapeHtml(ws.filterQ||'')}"><button data-action="select-all">Tout sélectionner</button><button data-action="deselect-all">Tout désélectionner</button><button data-action="remove-unselected">Retirer non sélectionnés</button>`; }
+function relevantPages() { if (ws.currentWorkflow === WORKFLOWS.create) return pages('ovp'); if (ws.currentWorkflow === WORKFLOWS.updateTaxonomy) return inventory().filter(p => (ws.taxonomySelection.nodeIds||[]).includes(String(p.nodeId))); return inventory(); }
+function filteredRows() { const q = (ws.filterQ || '').toLowerCase(); return relevantPages().filter(p => !q || [p.nodeId,p.drupalTitle,p.sourceTitle,p.intentionOvpId,p.trainingCodes.dispositifCode,p.taxonomies.departments.join('/')].join(' ').toLowerCase().includes(q)); }
+function renderTable() { const rows = filteredRows(); document.getElementById('table').innerHTML = `<h2>Tableau de travail</h2><table><thead><tr><th>Sélection</th><th>Statut</th><th>Confiance</th><th>Intention</th><th>Page Drupal</th><th>Node ID</th><th>Département</th><th>Dispositif</th><th>Module</th><th>Différences</th><th>Erreurs</th><th>Avertissements</th><th>Actions</th></tr></thead><tbody>${rows.map(p => { const diffs=ws.diffs.filter(d=>d.targetId===p.canonicalId && d.selected !== false).length; const match=ws.matches.find(m=>m.target?.canonicalId===p.canonicalId||m.targetId===p.canonicalId)||{}; return `<tr data-row="${p.canonicalId}"><td><input type="checkbox" data-select-row="${p.canonicalId}" ${ws.selections[p.canonicalId]!==false?'checked':''}></td><td>${escapeHtml(p.status)}</td><td>${match.score??p.confidence}</td><td>${escapeHtml(p.intentionOvpId||p.sourceTitle)}</td><td>${escapeHtml(p.drupalTitle||p.sourceTitle)}</td><td>${escapeHtml(p.nodeId||'')}</td><td>${escapeHtml(p.taxonomies.departments.join('/'))}</td><td>${escapeHtml(p.trainingCodes.dispositifCode)}</td><td>${escapeHtml(p.trainingCodes.moduleCodes.join(','))}</td><td>${diffs}</td><td>${p.errors.length}</td><td>${p.warnings.length}</td><td><button data-remove="${p.canonicalId}">Retirer</button></td></tr>`; }).join('') || '<tr><td colspan="13">Importez les sources attendues pour ce workflow.</td></tr>'}</tbody></table>`; }
+function renderRemoved() { const removed = Object.keys(ws.removedTargets || {}).filter(id => ws.removedTargets[id]); document.getElementById('removed').innerHTML = removed.length ? `<h2>Lignes retirées</h2>${removed.map(id => `<button data-restore="${id}">Restaurer ${id}</button>`).join('')}` : ''; }
+function firstActivePage() { return filteredRows()[0] || relevantPages()[0]; }
+function renderSide(p) { const diffs = p ? ws.diffs.filter(d => d.targetId === p.canonicalId) : []; document.getElementById('side').innerHTML = `<h2>Fiche latérale</h2>${p ? `<h3>${escapeHtml(p.drupalTitle||p.sourceTitle)}</h3><p><strong>Node ID:</strong> ${escapeHtml(p.nodeId||'création')}</p><details open><summary>Valeurs actuelles / demandées</summary><pre>${escapeHtml(JSON.stringify({ content:p.content,taxonomies:p.taxonomies,sessions:p.sessions,diffs },null,2))}</pre></details><details open><summary>Prévisualisation</summary><article>${p.content.body||'<em>Aucun HTML principal.</em>'}</article><p>Lien de retour prévu : Retour à la page Ma formation</p></details><details><summary>Correspondances</summary><pre>${escapeHtml(JSON.stringify(ws.matches.filter(m=>m.target?.canonicalId===p.canonicalId||m.targetId===p.canonicalId),null,2))}</pre></details><details><summary>Rapport Agent</summary><pre>${escapeHtml(JSON.stringify(reportFor(p),null,2))}</pre></details>` : '<p>Aucune page sélectionnée.</p>'}`; }
+function reportFor(p) { return ws.reports.flatMap(r => r.items || []).find(i => i.canonicalId === p.canonicalId || i.nodeId === p.nodeId) || {}; }
+function renderExport() { const validation = validateWorkspace(ws); const job = buildJob(ws); document.getElementById('export').innerHTML = `<h2>Contrôles et export</h2><div>${ws.controls.map(c => `<p class="${c.level}">${c.level === 'error' ? '⛔' : '⚠️'} ${escapeHtml(c.message)}</p>`).join('') || '<p class="ok">Aucun blocage détecté.</p>'}</div><button data-action="run-controls">Relancer contrôles</button><button data-action="download-job" ${validation.blocking?'disabled':''}>Exporter ${jobFilename(job)}</button><button data-action="download-inventory">Exporter copie recensement confirmée</button><pre>${escapeHtml(JSON.stringify(job,null,2))}</pre>`; }
+function onInput(e) { if (e.target.dataset.filter === 'q') { ws.filterQ = e.target.value; renderTable(); } if (e.target.dataset.tax) { updateTax(e.target); recompute(); render(); } }
+function onChange(e) { if (e.target.dataset.selectRow) { ws.selections[e.target.dataset.selectRow] = e.target.checked; } if (e.target.dataset.tax) { updateTax(e.target); recompute(); render(); } }
+function updateTax(el) { const key = el.dataset.tax; if (key === 'nodeIds') ws.taxonomySelection.nodeIds = splitTags(el.value.replace(/,/g,';')).map(String); else if (key === 'themes' || key === 'audiences') ws.taxonomySelection[key] = splitTags(el.value); else if (key === 'confirmedDestructive') ws.taxonomySelection[key] = el.checked; else ws.taxonomySelection[key] = el.value; }
+function onClick(e) { const a = e.target.dataset.action; if (e.target.dataset.step) { ws.stepIndex = Number(e.target.dataset.step); render(); } if (e.target.dataset.importSlot) { pendingSlot = e.target.dataset.importSlot; document.getElementById('files').click(); } if (e.target.dataset.remove) { withUndo(ws, 'remove_target', s => { s.removedTargets[e.target.dataset.remove] = true; s.diffs = s.diffs.filter(d => d.targetId !== e.target.dataset.remove); }); recompute(); render(); } if (e.target.dataset.restore) { withUndo(ws, 'restore_target', s => { delete s.removedTargets[e.target.dataset.restore]; }); recompute(); render(); } if (a === 'advanced') { ws.advanced = !ws.advanced; render(); } if (a === 'undo') { undo(ws); recompute(); render(); } if (a === 'redo') { redo(ws); recompute(); render(); } if (a === 'export-workspace') downloadText(`studio-eafc-${ws.workspaceId}.studio.json`, exportWorkspace(ws)); if (a === 'download-job') { const job = buildJob(ws); downloadText(jobFilename(job), JSON.stringify(job,null,2)); } if (a === 'download-inventory') downloadText(`recensement-eafc-v2-${new Date().toISOString().slice(0,10)}.csv`, buildInventoryCsv(), 'text/csv'); if (a === 'resume') { ws = loadWorkspace(); recompute(); render(); } if (a === 'history') alert(ws.history.map(h => `${h.at} ${h.event}`).join('\n') || 'Historique vide'); if (a === 'import-report') { pendingSlot = 'report'; document.getElementById('files').click(); } if (a === 'refresh-inventory') downloadText(`recensement-confirme-${new Date().toISOString().slice(0,10)}.csv`, buildInventoryCsv(), 'text/csv'); if (a === 'run-controls') { validateWorkspace(ws); renderExport(); } if (a === 'select-all') { filteredRows().forEach(p => ws.selections[p.canonicalId] = true); renderTable(); } if (a === 'deselect-all') { filteredRows().forEach(p => ws.selections[p.canonicalId] = false); renderTable(); } if (a === 'remove-unselected') { withUndo(ws, 'remove_unselected', s => filteredRows().filter(p => s.selections[p.canonicalId] === false).forEach(p => { s.removedTargets[p.canonicalId] = true; })); recompute(); render(); } }
+function buildInventoryCsv() { const reportItems = ws.reports.flatMap(r => r.items || []).filter(i => ['success','warning'].includes(i.status)); const rows = [['Node ID','URL','Statut','Job ID','Champs modifiés','Ancienne valeur','Nouvelle valeur','Erreurs','Version outil']]; for (const p of inventory()) { const ri = reportItems.find(i => i.nodeId === p.nodeId || i.canonicalId === p.canonicalId); rows.push([p.nodeId,p.drupalUrl,ri?.status||p.status,ws.reports.slice(-1)[0]?.jobId||'',(ri?.operationsApplied||[]).map(o=>o.field).join('|'),JSON.stringify(ri?.before||{}),JSON.stringify(ri?.after||{}),(ri?.errors||[]).map(e=>e.message||e).join('|'),STUDIO_VERSION]); } rows.push(['HISTORIQUE',new Date().toISOString(),'append-only','','','','','','']); return rows.map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n'); }
+
+mount(document.getElementById('app'));
+</script></body></html>
