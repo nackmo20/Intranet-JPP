@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { File } from 'node:buffer';
+import { readFileSync } from 'node:fs';
 import { detectType, inspectFile, parseTabular } from '../src/studio/adapters/universal.js';
 import { stripDepartmentPrefix, normalizeTitle } from '../src/studio/core/utils.js';
 import { matchPages } from '../src/studio/core/matching.js';
@@ -17,7 +18,68 @@ const fieldsOf = job => job.targets.flatMap(t => t.operations.map(o => o.field))
 
 test('imports: detect legacy create_pages JSON', () => { assert.equal(detectType({ name:'payload.json' }, JSON.stringify({ type:'create_pages', items:[] })), 'legacy_create_pages'); });
 test('imports: CSV aliases feed canonical model with origin', () => { const parsed = parseTabular('Node ID;Titre;Département\n123;16 - Formation test;16', 'recensement_excel'); assert.equal(parsed.pages[0].nodeId, '123'); assert.equal(parsed.pages[0].excelOrigin.rowNumber, 2); });
-test('excel: XLSX import gives no-loss diagnostic without touching original', async () => { const file = new File(['PK'], 'suivi.xlsx'); const source = await inspectFile(file); assert.equal(source.type, 'recensement_excel'); assert.equal(source.sheets, 1); assert.match(source.warnings.join(' '), /original ne sera jamais modifié|parseur complet/); });
+test('excel: invalid XLSX returns an explicit error, not simulated empty rows', async () => { const file = new File(['PK'], 'suivi.xlsx'); const source = await inspectFile(file); assert.equal(source.type, 'unknown'); assert.equal(source.status, 'warning'); assert.match(source.errors.join(' '), /workbook.xml|XLSX/); });
+
+
+const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+const pagesFromFixtureRows = (rows, sheet='fixture') => rows.map((r, i) => makePage({ nodeId:r['Node ID Drupal'], drupalUrl:r['Lien de la page'], title:r.Titre, departments:String(r['Départements']||'').split(/[;,|\n]+/).filter(Boolean), dispositifCode:r['Numéro de dispositif GAIA'], moduleCodes:String(r['Numéro de module GAIA']||'').split(/[;,|\n]+/).map(x=>x.trim()).filter(Boolean), sourceOvp:r['Source OVP'], excelOrigin:r.excelOrigin || { sheetName: sheet, rowNumber: i + 2 } }));
+
+test('real OVP fixture: 10 courses, meta fields and numeric session counters', () => {
+  const obj = fixture('ovp-plan-emi.sample.json');
+  assert.equal(detectType({ name:'plan.ovp.json' }, JSON.stringify(obj)), 'json_ovp');
+  const pages = pagesFromOvpJson(obj, { name:'ovp' });
+  assert.equal(pages.length, 10);
+  assert.equal(pages[0].content.objective, 'Objectif 1');
+  assert.equal(pages[0].content.body, 'Contenu 1');
+  assert.doesNotThrow(() => pagesFromOvpJson({ plan:{ courses:[{ id:'n', title:'Num', sessionsPresentiel:1, sessionsDistanciel:1, meta:{} }] } }));
+});
+
+test('real recensement fixture: T sheets, GAIA columns, origins and no departmental merge', () => {
+  const rec = fixture('recensement-drupal.sample.json');
+  const rows = rec.sheets.filter(s => /^T\d{1,2}_/.test(s.name)).flatMap(s => s.rows);
+  const pages = pagesFromFixtureRows(rows, 'T1_test');
+  assert.equal(pages.length, 3);
+  assert.deepEqual(pages.map(p => p.nodeId), ['1001','1002','1003']);
+  assert.equal(pages[0].trainingCodes.dispositifCode, '26A0130001');
+  assert.deepEqual(pages[1].trainingCodes.moduleCodes, ['75001','75002']);
+  assert.equal(pages[0].excelOrigin.sheetName, 'T1_test');
+  assert.equal(pages[0].excelOrigin.rowNumber, 2);
+  assert.notEqual(pages[0].canonicalId, pages[1].canonicalId);
+});
+
+test('GAIA module to Drupal Node ID uses exact code plus UAI department', () => {
+  const pages = pagesFromFixtureRows(fixture('recensement-drupal.sample.json').sheets[2].rows.slice(0,2), 'T1_test');
+  const sofia = fixture('sofia-plan-sessions.sample.json').sheets[0].rows.slice(0,2);
+  const { matches } = buildSofiaWorkflow(pages, sofia);
+  assert.equal(matches[0].nodeId, '1001');
+  assert.equal(matches[1].nodeId, '1002');
+});
+
+test('bidépartemental page accepts Sofia lines from departments 16 and 17', () => {
+  const page = pagesFromFixtureRows([fixture('recensement-drupal.sample.json').sheets[2].rows[2]], 'T1_test');
+  const rows = fixture('sofia-plan-sessions.sample.json').sheets[0].rows.slice(0,2).map(r => ({ ...r, 'Module : code':'75003' }));
+  const { matches } = buildSofiaWorkflow(page, rows);
+  assert.deepEqual(matches.map(m => m.nodeId), ['1003','1003']);
+});
+
+test('fallback without GAIA proposes title matches with groups UAI and departments but requires validation', () => {
+  const page = makePage({ nodeId:'2001', title:'16 - Parcours X', departments:['16'] });
+  const row = { 'Dispositif : code':'D9','Dispositif : libellé':'Parcours X','Module : code':'M9','Module : libellé':'Parcours X','Groupe : identifiant':'G16','Session':'S1','Début':'2026','Fin':'2026','Modalité':'Distance','UAI':'0160106D','Lieu':'Angoulême' };
+  const { matches } = buildSofiaWorkflow([page], [row]);
+  assert.equal(matches[0].nodeId, '2001');
+  assert.equal(matches[0].method, 'title_fallback_unvalidated');
+  assert.ok(matches[0].reasons.join(' ').includes('valider manuellement'));
+});
+
+test('security blockers: unresolved or ambiguous Sofia mappings carry conflicts and no exportable Node ID', () => {
+  const unresolved = buildSofiaWorkflow([], [{ 'Module : code':'75001','Début':'d' }]).matches[0];
+  assert.equal(unresolved.nodeId, '');
+  assert.ok(unresolved.conflicts.length);
+  const p1 = makePage({ nodeId:'1', title:'16 - X', moduleCode:'75001', departments:['16'] });
+  const p2 = makePage({ nodeId:'2', title:'16 - X bis', moduleCode:'75001', departments:['16'] });
+  const amb = buildSofiaWorkflow([p1,p2], [{ 'Dispositif : code':'D','Module : code':'75001','UAI':'0160106D','Début':'d' }]).matches[0];
+  assert.ok(amb.conflicts.join(' ').includes('Plusieurs pages possibles'));
+});
 
 test('unsupported binary: binary files are skipped without blocking extraction', async () => {
   const file = new File([new Uint8Array([0, 1, 2, 3])], 'notice.pdf', { type: 'application/pdf' });
@@ -39,7 +101,7 @@ test('controls: creation without audience blocks export', () => { const ws = cre
 
 test('ovp plan courses import maps real OVP fields and filters individual applications', () => {
   const pages = pagesFromOvpJson({ plan:{ courses:[{ id:'C1', title:'Parcours A', presentiel:'3h', distanciel:'1h', dureeTotale:'4h', effectif:'20', typeCandidature:'collective', meta:{ objectif:'Obj', contenu:'Body', prerequis:'Pré', accessibilite:'Acc', contact:'Mail', publicConcerne:'Enseignants', miseEnPlace:'Modalités' } }, { id:'C2', title:'Indiv', typeCandidature:'individuelle' }] } }, { name:'ovp.json' });
-  assert.equal(pages.length,1); assert.equal(pages[0].content.objective,'Obj'); assert.equal(pages[0].content.totalDuration,'4h');
+  assert.equal(pages.length,2); assert.equal(pages[0].content.objective,'Obj'); assert.equal(pages[0].content.totalDuration,'4h');
 });
 
 test('sofia integration: inventory + Sofia updates only sessions and pre-registration fields', () => {

@@ -1,0 +1,218 @@
+{
+  "version": "1.0",
+  "plan": {
+    "title": "Plan EMI",
+    "courses": [
+      {
+        "id": "id-1",
+        "title": "EMI - Parcours 1",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 1",
+          "contenu": "Contenu 1",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-2",
+        "title": "EMI - Parcours 2",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 2",
+          "contenu": "Contenu 2",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-3",
+        "title": "EMI - Parcours 3",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 3",
+          "contenu": "Contenu 3",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-4",
+        "title": "EMI - Parcours 4",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 4",
+          "contenu": "Contenu 4",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-5",
+        "title": "EMI - Parcours 5",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 5",
+          "contenu": "Contenu 5",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-6",
+        "title": "EMI - Parcours 6",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 6",
+          "contenu": "Contenu 6",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-7",
+        "title": "EMI - Parcours 7",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 7",
+          "contenu": "Contenu 7",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-8",
+        "title": "EMI - Parcours 8",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 8",
+          "contenu": "Contenu 8",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-9",
+        "title": "EMI - Parcours 9",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 9",
+          "contenu": "Contenu 9",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      },
+      {
+        "id": "id-10",
+        "title": "EMI - Parcours 10",
+        "presentiel": 6,
+        "distanciel": 3,
+        "sessionsPresentiel": 1,
+        "sessionsDistanciel": 1,
+        "effectif": 40,
+        "dureeTotale": 9,
+        "niveauDeploiement": "Bi départemental",
+        "typeCandidature": "Candidature individuelle",
+        "meta": {
+          "objectif": "Objectif 10",
+          "contenu": "Contenu 10",
+          "accessibilite": "Acc",
+          "prerequis": "Aucun",
+          "publicConcerne": "Enseignants",
+          "datesLieux": "02 Novembre 2026",
+          "contact": "Contact"
+        }
+      }
+    ]
+  }
+}
