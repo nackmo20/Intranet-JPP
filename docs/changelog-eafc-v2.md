@@ -13,3 +13,12 @@
 
 ## 2.0.0-step1
 - Audit, architecture, matrice et schémas.
+
+## 2.0.0-step4
+- Ajout de la documentation source de vérité `docs/sources-reelles-eafc-pour-codex.md` et lien README.
+- Correction des adaptateurs Studio pour détecter les Excel par contenu: recensement Drupal, demande éditoriale et Sofia-FMO plan/sessions.
+- Lecture OVP réelle via `course.meta.*` et prise en charge des sessions numériques.
+- Import des colonnes GAIA dispositif/module en chaînes exactes avec découpage multi-valeurs sans `includes` partiel.
+- Matching Sofia-FMO prioritaire module GAIA → Node ID, avec contrôle dispositif et résolution départementale/bidépartementale.
+- Secours historique par titre normalisé, score et validation manuelle lorsque les codes GAIA manquent.
+- Ajout des fixtures textuelles réelles et tests Studio associés.

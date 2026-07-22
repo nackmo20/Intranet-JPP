@@ -5,7 +5,8 @@
   function snapshot(){return JSON.stringify({...state,undo:[],redo:[]});}
   function push(action){state.undo.push(snapshot()); state.redo=[]; state.history.push({id:EAFC.model.uid('act'),at:new Date().toISOString(),action}); state.updatedAt=new Date().toISOString(); save();}
   function mutate(action,fn){push(action); fn(state); save(); EAFC.ui?.render();}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){console.warn('Autosave impossible',e);}}
+  function persistedState(){const copy=JSON.parse(JSON.stringify(state)); delete copy.workbook; delete copy.sourceBinary; return copy;}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(persistedState()));}catch(e){console.warn('Autosave impossible',e);}}
   function load(){try{const raw=localStorage.getItem(KEY); if(raw) state=Object.assign(initial(),JSON.parse(raw));}catch(e){console.warn('Workspace illisible',e);} return state;}
   function set(next){state=Object.assign(initial(),next); save(); return state;}
   function get(){return state;}

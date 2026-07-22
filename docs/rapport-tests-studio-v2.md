@@ -53,3 +53,17 @@
 | CKEditor/lien retour | création/MAJ | `src/agent/services/ckeditor.js` | inspection | Partiel | Instances CKEditor Drupal à valider. |
 | Sofia-FMO | MAJ | `src/agent/services/sofia.js` | calcul places | OK | Rendu mise en avant réel. |
 | Rapport JSON/CSV | MAJ | `src/agent/core/report.js` | export structure | OK | Réimport Studio avec rapports terrain. |
+
+## Étape 4 — Sources réelles EAFC et corrections Studio
+
+| Statut | Commande | Résultat |
+|---|---|---|
+| Succès | `python3 scripts/build-studio.py` | Reconstruit `dist/studio-intranet-eafc-v2.html` depuis `src/studio/`. |
+| Succès | `node tests/studio-real-sources.test.js` | Valide OVP réel, recensement GAIA, Sofia-FMO, matching départemental/bidépartemental et sécurités d'export. |
+| Succès | `node tests/excel-structure-readonly.test.js` | Vérifie que la lecture du recensement source reste strictement read-only. |
+
+## Détection des fichiers par contenu
+- JSON OVP: `obj?.plan && Array.isArray(obj.plan.courses)`.
+- Recensement Drupal: feuille avec alias `Node ID Drupal`, `Lien de la page`, `Titre`.
+- Demande éditoriale: feuille avec `ID intention`, `Titre du parcours`, `Objectif général`, `Contenu`.
+- Sofia-FMO: feuille avec `Dispositif : code`, `Module : code`, `Groupe : identifiant`, `Session`, `Début`, `Fin`, `Modalité`, `UAI`, `Lieu`.
