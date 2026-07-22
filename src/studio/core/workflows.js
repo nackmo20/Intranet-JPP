@@ -41,15 +41,17 @@ export function pageFromOvpCourse(course = {}, source = {}) {
 
 function buildOvpSessions(course) {
   const sessions = [];
-  for (const item of course.sessionsPresentiel || []) sessions.push({ modality: 'presentiel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
-  for (const item of course.sessionsDistanciel || []) sessions.push({ modality: 'distanciel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
+  for (const item of normalizeSessionItems(course.sessionsPresentiel)) sessions.push({ modality: 'presentiel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
+  for (const item of normalizeSessionItems(course.sessionsDistanciel)) sessions.push({ modality: 'distanciel', dates: splitTags(item.date || item.dates || item), lieux: splitTags(item.lieu || item.lieux) });
   if (course.meta?.datesLieux) sessions.push({ modality: '', dates: splitTags(course.meta.datesLieux), lieux: [] });
   return sessions;
 }
 
+function normalizeSessionItems(value) { if (Array.isArray(value)) return value; if (value && typeof value === 'object') return [value]; return []; }
+
 export function pagesFromOvpJson(obj, source = {}) {
   const courses = obj?.plan?.courses || obj?.courses || obj?.items || obj?.parcours || [];
-  return courses.filter(c => normalizeText(c.typeCandidature) !== 'individuelle').map(c => pageFromOvpCourse(c, source));
+  return courses.map(c => pageFromOvpCourse(c, source));
 }
 
 export function normalizeInventoryRows(rows = []) { return rows.map((row, index) => makePage({ ...row, canonicalId: row.canonicalId, title: row.drupalTitle || row.sourceTitle || row.title, nodeId: row.nodeId, drupalUrl: row.drupalUrl, excelOrigin: row.excelOrigin || { sheetName: row.sheetName || 'Recensement', rowNumber: row.rowNumber || index + 2 } })); }
@@ -76,18 +78,29 @@ export function buildSofiaWorkflow(inventoryPages, sofiaRows) {
 }
 
 function matchSofia(row, inventoryPages) {
-  const candidates = inventoryPages.map(page => scoreSofia(row, page)).filter(c => c.score > 0).sort((a,b) => b.score - a.score);
+  const exactModulePages = inventoryPages.filter(page => exactCodeList(page.trainingCodes?.moduleCodes).includes(normalizeText(row.moduleCode)));
+  const pool = exactModulePages.length ? exactModulePages : inventoryPages;
+  const candidates = pool.map(page => scoreSofia(row, page, exactModulePages.length > 0)).filter(c => c.score > 0).sort((a,b) => b.score - a.score);
   const best = candidates[0];
   const conflicts = [];
   if (!best) conflicts.push('Aucune page Drupal recensée ne correspond aux clés Sofia-FMO.');
   if (best && candidates[1] && candidates[1].score >= best.score - 0.05) conflicts.push('Plusieurs pages possibles : sélection manuelle requise.');
   return { row, target: best?.page || null, nodeId: best?.page?.nodeId || '', score: best?.score || 0, method: best?.method || 'unresolved', reasons: best?.reasons || [], conflicts, alternatives: candidates.slice(1,4).map(c => ({ nodeId: c.page.nodeId, title: c.page.drupalTitle, score: c.score })) };
 }
-function scoreSofia(row, page) {
+function scoreSofia(row, page, gaiaPriority = false) {
   const reasons = []; let score = 0, method = 'none';
-  const checks = [ ['dispositifCode', row.dispositifCode, page.trainingCodes.dispositifCode, .35], ['moduleCode', row.moduleCode, page.trainingCodes.moduleCodes?.[0], .25], ['groupCode', row.groupCode, page.trainingCodes.groups?.[0], .2], ['uai', row.uai, page.trainingCodes.rne?.[0] || page.trainingCodes.uai?.[0], .12], ['department', inferDept(row.uai) || inferDept(row.location), page.taxonomies.departments?.[0], .05], ['normalizedTitle', row.moduleLabel || row.dispositifLabel, page.drupalTitle || page.sourceTitle, .03] ];
-  for (const [key, a, b, pts] of checks) { if (!a || !b) continue; const ok = key === 'normalizedTitle' ? normalizeTitle(a) === normalizeTitle(b) : normalizeText(a) === normalizeText(b); if (ok) { score += pts; method = method === 'none' ? key : `${method}+${key}`; reasons.push(`Égalité ${key}`); } }
-  return { page, score: Math.round(score * 100) / 100, method, reasons };
+  const rowDept = getPlanSessionDepartment(row);
+  const pageDepts = getDrupalTitleDepartments(page);
+  const moduleOk = row.moduleCode && exactCodeList(page.trainingCodes?.moduleCodes).includes(normalizeText(row.moduleCode));
+  if (moduleOk) { score += .7; method = 'module_gaia'; reasons.push('Égalité exacte module GAIA'); }
+  const dispositifOk = row.dispositifCode && page.trainingCodes?.dispositifCode && normalizeText(row.dispositifCode) === normalizeText(page.trainingCodes.dispositifCode);
+  if (dispositifOk) { score += .12; reasons.push('Contrôle dispositif GAIA'); }
+  if (rowDept && pageDepts.length && pageDepts.includes(rowDept)) { score += .13; reasons.push(`Département compatible ${rowDept}`); }
+  else if (gaiaPriority && pageDepts.length) { return { page, score: 0, method: 'department_incompatible', reasons: ['Département non compatible avec la page Drupal'] }; }
+  const groupOk = row.groupCode && (page.trainingCodes.groups || []).some(g => normalizeText(g) === normalizeText(row.groupCode));
+  if (groupOk) { score += .05; reasons.push('Groupe compatible'); }
+  if (!gaiaPriority && !moduleOk) { const titleScore = titleSimilarity(row.moduleLabel || row.dispositifLabel, page.drupalTitle || page.sourceTitle); if (titleScore >= .55) { score = Math.max(score, titleScore * .8); method = 'title_fallback_unvalidated'; reasons.push('Secours par similarité de titre à valider manuellement'); } }
+  return { page, score: Math.round(Math.min(score, 1) * 100) / 100, method, reasons };
 }
 function sofiaDiffs(page, row, match) {
   const values = { dates: [row.start, row.end].filter(Boolean).join(' → '), times: row.duration, locations: row.location, modalities: row.modality, preRegistrationUrl: row.preRegistrationUrl, publicationStart: row.publicationStart, publicationEnd: row.publicationEnd, capacity: row.capacity, registered: row.registered, remainingSeats: row.remainingSeats };
@@ -134,4 +147,8 @@ export function workflowOperations(diffs, workflow) {
 }
 function pick(row, names) { const keys = Object.keys(row || {}); const found = keys.find(k => names.some(n => normalizeText(k) === normalizeText(n))); return found ? row[found] : ''; }
 function numberValue(v) { if (v === '' || v === null || v === undefined) return ''; const n = Number(String(v).replace(',', '.').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? n : ''; }
-function inferDept(text = '') { const m = String(text).match(/\b(16|17|79|86)\b/); return m?.[1] || ''; }
+function inferDept(text = '') { const raw = String(text); const uai = raw.match(/\b0?(16|17|79|86)\d{4}[A-Z]\b/i); if (uai) return uai[1]; const m = raw.match(/(?:^|\D)(0?16|0?17|79|86)(?:\D|$)/); return m?.[1]?.replace(/^0/, '') || ''; }
+function exactCodeList(values = []) { return (Array.isArray(values) ? values : [values]).map(normalizeText).filter(Boolean); }
+export function getDrupalTitleDepartments(page = {}) { const title = page.drupalTitle || page.sourceTitle || ''; const prefix = String(title).match(/^\s*0?(16|17|79|86)(?:\s*\/\s*0?(16|17|79|86))?\s*[-–—:]/); const fromTitle = prefix ? [prefix[1], prefix[2]].filter(Boolean) : []; return unique([...fromTitle, ...(page.taxonomies?.departments || [])].flatMap(v => String(v).split(/[;,|\/\n]+/))).map(v => v.replace(/^0/, '')).filter(v => ['16','17','79','86'].includes(v)); }
+export function getPlanSessionDepartment(row = {}) { return inferDept(row.uai) || inferDept(row.rne) || inferDept(row.department) || inferDept(row.territory) || inferDept(row.location) || inferDept(row.groupLabel) || inferDept(row.groupCode) || inferDept(row.session); }
+function titleSimilarity(a = '', b = '') { const aa = normalizeTitle(a).split(' ').filter(Boolean), bb = normalizeTitle(b).split(' ').filter(Boolean); if (!aa.length || !bb.length) return 0; const inter = aa.filter(x => bb.includes(x)).length; return inter / Math.max(aa.length, bb.length); }

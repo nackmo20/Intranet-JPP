@@ -1,0 +1,46 @@
+{
+  "sheets": [
+    {
+      "name": "Liste des dispositifs",
+      "rows": [
+        {
+          "Dispositif : code": "26A0130001",
+          "Module : code": "75001",
+          "Groupe : identifiant": "G16",
+          "Session": "S1",
+          "Début": "2026-09-01 09:00",
+          "Fin": "2026-09-01 12:00",
+          "Modalité": "Présentiel",
+          "UAI": "0160106D",
+          "Lieu": "Angoulême",
+          "Préinscriptions : Préinscrits : nombre maximal": "20",
+          "Préinscriptions : Préinscrits : nombre total": "7",
+          "Préinscriptions : Publication : lien préinscription": "https://pre/16"
+        },
+        {
+          "Dispositif : code": "26A0130001",
+          "Module : code": "75001",
+          "Groupe : identifiant": "G17",
+          "Session": "S2",
+          "Début": "2026-09-02 09:00",
+          "Fin": "2026-09-02 12:00",
+          "Modalité": "Présentiel",
+          "UAI": "0170001A",
+          "Lieu": "La Rochelle"
+        },
+        {
+          "Dispositif : code": "26A0130001",
+          "Module : code": "99999",
+          "Module : libellé": "Parcours X",
+          "Groupe : identifiant": "G99",
+          "Session": "S3",
+          "Début": "2026-09-03",
+          "Fin": "2026-09-03",
+          "Modalité": "Distance",
+          "UAI": "0160106D",
+          "Lieu": "Angoulême"
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # Changelog
 
+- Intègre la documentation des sources réelles EAFC, la détection XLSX par signatures de colonnes, les colonnes GAIA exactes et le matching Sofia-FMO module → Node ID avec contrôle territorial.
+- Remplace le diagnostic XLSX simulé par un parseur structurel navigateur (workbook, sharedStrings, lignes, formules, dates Excel, feuilles et fusions) et ajoute des fixtures/tests EAFC.
+
 ## 2.0.0-beta.1 — 2026-07-20
 
 - Spécialise les quatre workflows Studio : création OVP, mise à jour Sofia-FMO, demandes éditoriales, taxonomies.
